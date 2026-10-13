@@ -91,6 +91,23 @@ assert.strictEqual(S.safeMarkdown("<https://a/[x]>"), "[https://a/\\[x\\]](https
 assert.strictEqual(S.safeMarkdown("[a](<https://x/y>)"), "[a](https://x/y)")
 assert.strictEqual(S.safeMarkdown("<https://a/\\>(evil)"), "[https://a/\\\\](https://a/%5C)(evil)")
 assert.strictEqual(S.safeMarkdown("<https://a/`*_>"), "[https://a/\\`\\*\\_](https://a/%60*_)")
+{
+  // Default row: exact file names, apps and keybindings, questions.
+  const ask = (q) => ({ kind: "ask", title: "Ask Claude", subtitle: q })
+  const bind = { kind: "binding", title: "Toggle window floating/tiling" }
+  const act = { kind: "action", title: "Float" }
+  const file = (t) => ({ kind: "file", title: t })
+  assert.strictEqual(S.defaultRow([ask("float"), bind, file("floater.mdl"), file("float.h")], "float"), 1)
+  assert.strictEqual(S.defaultRow([ask("float"), act, bind, file("float.h")], "float"), 2)
+  assert.strictEqual(S.defaultRow([ask("float"), act, file("float.h")], "float"), 2)
+  assert.strictEqual(S.defaultRow([ask("notes"), file("notes.txt")], "notes"), 1)
+  assert.strictEqual(S.defaultRow([ask("how"), { kind: "binding", title: "Show time" }, file("how.md")], "how"), 2)
+  assert.strictEqual(S.defaultRow([ask("how"), { kind: "binding", title: "Show time" }], "how"), 0)
+  assert.strictEqual(S.defaultRow([ask("my notes for monday.txt"), file("my notes for monday.txt")], "my notes for monday.txt"), 1)
+  assert.strictEqual(S.defaultRow([ask("chrome"), { kind: "app", title: "Chrome" }, file("chrome.png")], "chrome"), 1)
+  assert.strictEqual(S.defaultRow([ask("qwzxv")], "qwzxv"), 0)
+  assert.strictEqual(S.defaultRow([ask("zoom"), { kind: "binding", title: "Zoom in" }], "zoom"), 1)
+}
 assert.strictEqual(S.colorLinks, undefined, "no HTML of OmaLight's own goes into answers")
 assert.strictEqual(S.isWebLink("https://wiki.archlinux.org/x"), true)
 assert.strictEqual(S.isWebLink("file:///etc/passwd"), false)

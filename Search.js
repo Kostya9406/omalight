@@ -27,6 +27,37 @@ function looksLikeQuestion(text) {
   return QUESTION_WORDS.indexOf(words[0]) >= 0
 }
 
+// The first file or app row (after the ask row) named exactly like the text,
+// extension aside; -1 when there is none.
+function exactMatchRow(rows, q) {
+  var want = String(q || "").trim().toLowerCase()
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i]
+    if (r.kind !== "file" && r.kind !== "app") continue
+    var t = String(r.title).toLowerCase()
+    if (t === want || t.replace(/\.[^.]+$/, "") === want) return i
+  }
+  return -1
+}
+
+// The row picked until the user picks one. A file or app named exactly like
+// the text wins, even when the text reads like a question ("my notes for
+// monday.txt"); otherwise a search lands on the first result and a question
+// stays on the ask row (0). For a search, a file named exactly so still gives
+// way to apps and keybindings found for the same text: "float" lands on the
+// floating keybinding, not on some float.h. A question does not: there the
+// exact name is what makes it a search, so the file keeps the pick rather
+// than a keybinding nobody looked at.
+function defaultRow(rows, q) {
+  var exact = exactMatchRow(rows, q)
+  if (exact > 0 && rows[exact].kind === "file" && !looksLikeQuestion(q)) {
+    for (var i = 1; i < exact; i++)
+      if (rows[i].kind === "app" || rows[i].kind === "binding") return i
+  }
+  if (exact > 0) return exact
+  return looksLikeQuestion(q) || rows.length < 2 ? 0 : 1
+}
+
 function keywordText(entry) {
   try {
     if (entry && entry.keywords && typeof entry.keywords.join === "function") return entry.keywords.join(" ")
@@ -577,7 +608,7 @@ function claudeUsage(raw) {
 }
 
 if (typeof module !== "undefined") module.exports = {
-  looksLikeQuestion: looksLikeQuestion, appScore: appScore, searchApps: searchApps,
+  looksLikeQuestion: looksLikeQuestion, exactMatchRow: exactMatchRow, defaultRow: defaultRow, appScore: appScore, searchApps: searchApps,
   filterFiles: filterFiles, baseName: baseName, dirName: dirName, tildify: tildify,
   parseStreamLine: parseStreamLine, explainError: explainError,
   safeMarkdown: safeMarkdown, isWebLink: isWebLink,
