@@ -179,12 +179,18 @@ Item {
     if (input.text !== text) input.text = text
     if (root.hasAnswer) return
     root.userMoved = false
-    if (root.pendingEnter) { root.pendingEnter = ""; root.notice = "" }
+    root.pendingEnter = ""
+    root.notice = ""
     root.rebuildRows()
     var q = text.trim()
     root.selectedIndex = Search.looksLikeQuestion(q) || root.rows.length < 2 ? 0 : 1
-    if (q.length >= 2) fileDebounce.restart()
+    // Pasted text with line breaks (an error message, say) is never a file name.
+    if (q.length >= 2 && !root.multiline(q)) fileDebounce.restart()
     else { fileDebounce.stop(); root.files = []; root.filesQuery = "" }
+  }
+
+  function multiline(q) {
+    return /[\r\n]/.test(q)
   }
 
   function rebuildRows() {
@@ -276,16 +282,23 @@ Item {
       root.pendingEnter = ""
       root.notice = ""
       var row = root.rows[root.selectedIndex]
-      // Nothing matched a search-like query: say so rather than send it to Claude
-      // unseen; the next Enter asks, since the ask row now counts as chosen.
       if (row && row.kind === "ask" && !Search.looksLikeQuestion(q)) {
-        root.userMoved = true
-        root.notice = root.tr("nothingFound")
-        noticeTimer.restart()
+        // A search-like query is never sent to Claude by an Enter pressed before
+        // anyone saw the results: with results on screen the choice is left to
+        // the user; with none, the same notice as in enter().
+        if (root.rows.length < 2) root.sayNothingFound()
         return
       }
       root.activate(root.selectedIndex, root.pendingReveal)
     }
+  }
+
+  // The next Enter asks Claude: the ask row, alone on screen, now counts as chosen.
+  // The notice stays until the text changes.
+  function sayNothingFound() {
+    root.userMoved = true
+    noticeTimer.stop()
+    root.notice = root.tr("nothingFound")
   }
 
   function onFilesFailed(q) {
@@ -312,20 +325,28 @@ Item {
   function enter(reveal) {
     var q = root.query.trim()
     var row = root.rows[root.selectedIndex]
-    if (row && row.kind === "ask" && !root.userMoved && q.length >= 2 && root.filesQuery !== q) {
-      root.pendingEnter = q
-      root.pendingReveal = reveal
-      root.notice = root.tr("searchingFiles")
-      // After a failed search nothing else would search this query again.
-      if (!fileProc.running && !fileDebounce.running) root.startFileSearch()
-      return
+    if (row && row.kind === "ask" && !root.userMoved && !root.multiline(q)) {
+      if (q.length >= 2 && root.filesQuery !== q) {
+        root.pendingEnter = q
+        root.pendingReveal = reveal
+        root.notice = root.tr("searchingFiles")
+        // After a failed search nothing else would search this query again.
+        if (!fileProc.running && !fileDebounce.running) root.startFileSearch()
+        return
+      }
+      // The search already came back empty: same answer as when Enter waited
+      // for it, so how fast plocate was never decides what reaches Claude.
+      if (!Search.looksLikeQuestion(q) && root.rows.length < 2) {
+        root.sayNothingFound()
+        return
+      }
     }
     root.activate(root.selectedIndex, reveal)
   }
 
   function startFileSearch() {
     var q = root.query.trim()
-    if (q.length < 2 || root.hasAnswer) return
+    if (q.length < 2 || root.hasAnswer || root.multiline(q)) return
     if (fileProc.running) return // onExited picks the newest query up
     fileProc.searched = q
     // files.sh: plocate's index plus fd for what changed since it was built.

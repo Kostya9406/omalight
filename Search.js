@@ -163,6 +163,10 @@ function outsideCode(text, fn) {
   return parts.join("")
 }
 
+function linkAddress(url) {
+  return url.replace(/\(/g, "%28").replace(/\)/g, "%29").replace(/\[/g, "%5B").replace(/\]/g, "%5D")
+}
+
 // U+2060 WORD JOINER: invisible, zero width, and not Markdown or HTML syntax.
 var WJ = "\u2060"
 
@@ -180,8 +184,14 @@ var WJ = "\u2060"
 // as before; copying an answer takes the original text, not this.
 function safeMarkdown(text) {
   return outsideCode(text, function(md) {
-    // Autolinks look like tags; keep them as ordinary links first.
-    return md.replace(/<(https?:\/\/[^\s<>]+)>/gi, "[$1]($1)")
+    // Autolinks and <url> link destinations look like tags; turn them into
+    // ordinary links first. Brackets and parentheses are escaped in the label
+    // and percent-encoded in the address, so they cannot end the link early.
+    return md
+      .replace(/\]\(<(https?:\/\/[^\s<>]+)>\)/gi, function(all, url) { return "](" + linkAddress(url) + ")" })
+      .replace(/<(https?:\/\/[^\s<>]+)>/gi, function(all, url) {
+        return "[" + url.replace(/[\[\]\\]/g, "\\$&") + "](" + linkAddress(url) + ")"
+      })
   })
     .replace(/!\[/g, "!" + WJ + "[")
     .replace(/</g, "<" + WJ)
