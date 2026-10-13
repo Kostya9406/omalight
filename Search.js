@@ -164,7 +164,7 @@ function outsideCode(text, fn) {
 }
 
 function linkAddress(url) {
-  return url.replace(/\(/g, "%28").replace(/\)/g, "%29").replace(/\[/g, "%5B").replace(/\]/g, "%5D")
+  return url.replace(/\(/g, "%28").replace(/\)/g, "%29").replace(/\[/g, "%5B").replace(/\]/g, "%5D").replace(/\\/g, "%5C").replace(/`/g, "%60")
 }
 
 // U+2060 WORD JOINER: invisible, zero width, and not Markdown or HTML syntax.
@@ -190,7 +190,7 @@ function safeMarkdown(text) {
     return md
       .replace(/\]\(<(https?:\/\/[^\s<>]+)>\)/gi, function(all, url) { return "](" + linkAddress(url) + ")" })
       .replace(/<(https?:\/\/[^\s<>]+)>/gi, function(all, url) {
-        return "[" + url.replace(/[\[\]\\]/g, "\\$&") + "](" + linkAddress(url) + ")"
+        return "[" + url.replace(/[\[\]\\`*_]/g, "\\$&") + "](" + linkAddress(url) + ")"
       })
   })
     .replace(/!\[/g, "!" + WJ + "[")

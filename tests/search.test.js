@@ -89,6 +89,8 @@ assert.strictEqual(S.safeMarkdown("see <https://wiki.hypr.land/x>"), "see [https
 assert.strictEqual(S.safeMarkdown("<https://a/b)c>"), "[https://a/b)c](https://a/b%29c)")
 assert.strictEqual(S.safeMarkdown("<https://a/[x]>"), "[https://a/\\[x\\]](https://a/%5Bx%5D)")
 assert.strictEqual(S.safeMarkdown("[a](<https://x/y>)"), "[a](https://x/y)")
+assert.strictEqual(S.safeMarkdown("<https://a/\\>(evil)"), "[https://a/\\\\](https://a/%5C)(evil)")
+assert.strictEqual(S.safeMarkdown("<https://a/`*_>"), "[https://a/\\`\\*\\_](https://a/%60*_)")
 assert.strictEqual(S.colorLinks, undefined, "no HTML of OmaLight's own goes into answers")
 assert.strictEqual(S.isWebLink("https://wiki.archlinux.org/x"), true)
 assert.strictEqual(S.isWebLink("file:///etc/passwd"), false)

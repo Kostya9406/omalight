@@ -183,7 +183,6 @@ Item {
     root.notice = ""
     root.rebuildRows()
     var q = text.trim()
-    root.selectedIndex = Search.looksLikeQuestion(q) || root.rows.length < 2 ? 0 : 1
     // Pasted text with line breaks (an error message, say) is never a file name.
     if (q.length >= 2 && !root.multiline(q)) fileDebounce.restart()
     else { fileDebounce.stop(); root.files = []; root.filesQuery = "" }
@@ -195,7 +194,7 @@ Item {
 
   function rebuildRows() {
     var q = root.query.trim()
-    if (!q) { root.rows = []; return }
+    if (!q) { root.rows = []; root.selectedIndex = 0; return }
     var hidden = {}
     for (var h in root.configuredHiddenIds) hidden[h] = true
     for (var h2 in root.hiddenIds) hidden[h2] = true
@@ -254,15 +253,38 @@ Item {
                    path: f.path, dir: f.dir })
       }
     }
+    // "Nothing found" no longer holds once a late source adds results: the
+    // choice goes back to the default row.
+    if (root.notice === root.tr("nothingFound") && out.length > 1) { root.notice = ""; root.userMoved = false }
     var picked = root.userMoved ? root.rows[root.selectedIndex] : null
     root.rows = out
     pointerGate.reset()
     if (picked) {
+      var found = false
       for (var k = 0; k < out.length; k++) {
-        if (out[k].kind === picked.kind && out[k].title === picked.title && out[k].subtitle === picked.subtitle) { root.selectedIndex = k; break }
+        if (out[k].kind === picked.kind && out[k].title === picked.title && out[k].subtitle === picked.subtitle) { root.selectedIndex = k; found = true; break }
       }
+      // The picked row is gone (a window closed, an action got hidden): the
+      // pick no longer stands, rather than landing on whatever took its place.
+      if (!found) root.userMoved = false
     }
     if (root.selectedIndex >= out.length) root.selectedIndex = Math.max(0, out.length - 1)
+    // Until the user picks a row, every rebuild (typing, files or a late source
+    // such as keybindings) lands on the default one, so the ask row never stays
+    // selected above results it did not see.
+    if (!root.userMoved) {
+      root.selectedIndex = root.defaultRow(q)
+      results.positionViewAtIndex(root.selectedIndex, ListView.Contain)
+    }
+  }
+
+  // A file or app named exactly what was typed wins, even when the text reads
+  // like a question ("my notes for monday.txt"); otherwise a search lands on
+  // the first result and a question stays on the ask row.
+  function defaultRow(q) {
+    var exact = root.exactMatchRow(q)
+    if (exact > 0) return exact
+    return Search.looksLikeQuestion(q) || root.rows.length < 2 ? 0 : 1
   }
 
   function onFilesArrived(q, output) {
@@ -270,14 +292,6 @@ Item {
     root.filesQuery = q
     if (root.hasAnswer || q !== root.query.trim()) return
     root.rebuildRows()
-    if (!root.userMoved) {
-      // A file or app named exactly what was typed wins, even when the text reads
-      // like a question ("my notes for monday.txt"); otherwise a search lands on
-      // the first result and a question stays on the ask row.
-      var exact = root.exactMatchRow(q)
-      if (exact > 0) root.selectedIndex = exact
-      else if (!Search.looksLikeQuestion(q) && root.selectedIndex === 0 && root.rows.length > 1) root.selectedIndex = 1
-    }
     if (root.pendingEnter === q) {
       root.pendingEnter = ""
       root.notice = ""
@@ -325,8 +339,9 @@ Item {
   function enter(reveal) {
     var q = root.query.trim()
     var row = root.rows[root.selectedIndex]
-    if (row && row.kind === "ask" && !root.userMoved && !root.multiline(q)) {
-      if (q.length >= 2 && root.filesQuery !== q) {
+    if (row && row.kind === "ask" && !root.userMoved) {
+      // Pasted text with line breaks is never searched for, so nothing to wait for.
+      if (q.length >= 2 && !root.multiline(q) && root.filesQuery !== q) {
         root.pendingEnter = q
         root.pendingReveal = reveal
         root.notice = root.tr("searchingFiles")
@@ -336,8 +351,10 @@ Item {
       }
       // The search already came back empty: same answer as when Enter waited
       // for it, so how fast plocate was never decides what reaches Claude.
-      if (!Search.looksLikeQuestion(q) && root.rows.length < 2) {
-        root.sayNothingFound()
+      // With results on screen the choice is left to the user.
+      if (!Search.looksLikeQuestion(q)) {
+        if (root.rows.length < 2) root.sayNothingFound()
+        else root.selectedIndex = root.defaultRow(q)
         return
       }
     }
@@ -495,6 +512,7 @@ Item {
     var q = String(question || "").trim()
     if (!q) return
     fileDebounce.stop()
+    root.pendingEnter = ""
     // A new question while one is still answering ends that one where it is.
     if (root.answering) root.finishTurn(root.tr("interrupted"))
     var turns = root.turns.slice()
@@ -988,7 +1006,6 @@ Item {
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
               onClicked: { root.cycleModel(); input.forceActiveFocus() }
-              onContainsMouseChanged: root.notice = containsMouse ? root.tr("modelHint") : ""
             }
           }
         }
@@ -1212,9 +1229,10 @@ Item {
         Text {
           id: footer
           width: parent.width
-          visible: root.query.trim().length > 0 || root.hasAnswer || !!root.notice
+          visible: root.query.trim().length > 0 || root.hasAnswer || !!root.notice || modelMouse.containsMouse
           textFormat: Text.PlainText
           text: root.hoveredLink ? (Search.isWebLink(root.hoveredLink) ? root.hoveredLink : root.tr("linkBlocked") + root.hoveredLink)
+            : modelMouse.containsMouse ? root.tr("modelHint")
             : root.notice ? root.notice
             : root.tr(root.answering ? "footStop" : root.hasAnswer ? "footAnswer" : "footSearch")
           color: root.foreground
