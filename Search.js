@@ -152,25 +152,40 @@ function parseStreamLine(line) {
   return null
 }
 
+// Applies `fn` to the Markdown outside code: fenced blocks (closed or still
+// streaming) and inline code spans pass through untouched, because the
+// renderer shows them literally anyway.
+function outsideCode(text, fn) {
+  var parts = String(text || "").split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/)
+  for (var i = 0; i < parts.length; i += 2) parts[i] = fn(parts[i])
+  return parts.join("")
+}
+
 // Model output is untrusted (web pages it read can steer it). Qt's Markdown
 // renderer fetches images on its own, so an image could carry the conversation
-// out in its URL without a click: keep only the alt text. Raw HTML goes too.
+// out in its URL without a click: keep only the alt text. Any other "<" is
+// shown as text rather than parsed, so raw HTML cannot load anything either,
+// while placeholders such as <name> stay readable. Code is left alone.
 function safeMarkdown(text) {
-  return String(text || "")
-    // Autolinks look like tags; keep them as ordinary links first.
-    .replace(/<(https?:\/\/[^\s<>]+)>/gi, "[$1]($1)")
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/!\[([^\]]*)\]\[[^\]]*\]/g, "$1")
-    .replace(/^\s*\[[^\]]+\]:\s*\S+.*$/gm, "")
-    .replace(/<\/?[A-Za-z][^>]*>/g, "")
+  return outsideCode(text, function(md) {
+    return md
+      // Autolinks look like tags; keep them as ordinary links first.
+      .replace(/<(https?:\/\/[^\s<>]+)>/gi, "[$1]($1)")
+      .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .replace(/!\[([^\]]*)\]\[[^\]]*\]/g, "$1")
+      .replace(/^\s*\[[^\]]+\]:\s*\S+.*$/gm, "")
+      .replace(/</g, "&lt;")
+  })
 }
 
 // Qt's Markdown renderer ignores linkColor, but honours <font> inside link
-// text. Run after safeMarkdown, so the only tags left are these.
+// text. Run after safeMarkdown, so these are the only tags in the text.
 function colorLinks(markdown, color) {
   var c = String(color || "")
   if (!/^#[0-9a-fA-F]{6}$/.test(c)) return String(markdown || "")
-  return String(markdown || "").replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, "[<font color='" + c + "'>$1</font>]($2)")
+  return outsideCode(markdown, function(md) {
+    return md.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, "[<font color='" + c + "'>$1</font>]($2)")
+  })
 }
 
 // Only plain web links open from an answer; file:, custom schemes and relative
