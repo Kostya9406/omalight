@@ -64,7 +64,8 @@ o.bind("ALT + SPACE", "OmaLight", "omarchy-shell shell toggle io.github.kostya94
 | <kbd>Alt</kbd>+<kbd>↵</kbd> | open the file's folder |
 | <kbd>↑</kbd> <kbd>↓</kbd> · <kbd>Tab</kbd> · <kbd>Ctrl</kbd>+<kbd>J</kbd>/<kbd>K</kbd> | pick a result |
 | <kbd>↵</kbd> after an answer | ask a follow-up |
-| <kbd>Ctrl</kbd>+<kbd>C</kbd> | copy the last answer |
+| <kbd>Ctrl</kbd>+<kbd>C</kbd> · <kbd>Super</kbd>+<kbd>C</kbd> | copy the last answer (Omarchy's universal copy works too, over terminals as well) |
+| <kbd>Ctrl</kbd>+<kbd>V</kbd> · <kbd>Super</kbd>+<kbd>V</kbd> | paste into the bar |
 | <kbd>Ctrl</kbd>+<kbd>N</kbd> | start a new conversation |
 | <kbd>Ctrl</kbd>+<kbd>M</kbd> | switch the model: Haiku → Sonnet → Opus (or click its name) |
 | <kbd>PgUp</kbd> <kbd>PgDn</kbd> | scroll the answer |

@@ -567,7 +567,8 @@ Item {
     if (ctrl && event.key === Qt.Key_M) { root.cycleModel(); return true }
     if (root.hasAnswer) {
       if (enter) { root.ask(root.query); return true }
-      if (ctrl && event.key === Qt.Key_C && !input.selectedText) { root.copyAnswer(); return true }
+      // Ctrl+Insert too: Omarchy's Super+C sends it instead of Ctrl+C when a terminal is the active window.
+      if (ctrl && (event.key === Qt.Key_C || event.key === Qt.Key_Insert) && !input.selectedText) { root.copyAnswer(); return true }
       if (ctrl && event.key === Qt.Key_N) { root.resetConversation(); root.setQuery(""); return true }
       if (event.key === Qt.Key_PageUp) { answerView.flick(0, Style.space(1600)); return true }
       if (event.key === Qt.Key_PageDown) { answerView.flick(0, -Style.space(1600)); return true }
