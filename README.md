@@ -78,7 +78,7 @@ o.bind("ALT + SPACE", "OmaLight", "omarchy-shell shell toggle io.github.kostya94
 - OmaLight's own files are in `~/.local/state/omalight`: `settings.json` (model and language), `usage.json` (how often you launch what) and `picker/`, a two-line stand-in for `omarchy-menu-select` that lets a keybinding row run through `omarchy-menu-keybindings`. Claude runs from that folder, so its conversations are not mixed into your projects.
 - The conversations themselves are stored by Claude Code, like any `claude` session, in `~/.claude/projects/-home-<you>--local-state-omalight/` (one `.jsonl` file per conversation, questions and answers included, kept until you delete them). That is what lets a follow-up `--resume` the conversation.
 - Omarchy menu actions run exactly as the Omarchy menu runs them: they are commands from Omarchy and from your own menu extension.
-- Answers are untrusted text. Images and raw HTML are stripped before rendering, so nothing is fetched without a click, and only `http(s)` links open.
+- Answers are untrusted text. Before rendering, image syntax and HTML tags are broken up with an invisible character (everywhere, code included), so an answer can never make the bar fetch anything without a click; links open only on a click, and only `http(s)` ones. Copying an answer gives the original text.
 - Typed text and file paths reach programs only as separate arguments, never through a shell.
 
 ## Uninstall

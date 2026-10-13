@@ -154,33 +154,39 @@ function parseStreamLine(line) {
 }
 
 // Applies `fn` to the Markdown outside code: fenced blocks (closed or still
-// streaming) and inline code spans pass through untouched, because the
-// renderer shows them literally anyway.
+// streaming) and inline code spans pass through untouched. This guess at what
+// is code can differ from Qt's own Markdown parser, so it is only used for
+// cosmetic changes (autolinks, link colour), never for safety.
 function outsideCode(text, fn) {
   var parts = String(text || "").split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/)
   for (var i = 0; i < parts.length; i += 2) parts[i] = fn(parts[i])
   return parts.join("")
 }
 
+// U+2060 WORD JOINER: invisible, zero width, and not Markdown or HTML syntax.
+var WJ = "\u2060"
+
 // Model output is untrusted (web pages it read can steer it). Qt's Markdown
 // renderer fetches images on its own, so an image could carry the conversation
-// out in its URL without a click. Rather than chase every image form (nested,
-// reference, shortcut), "![" is never left intact: it becomes "&#33;[", which
-// renders as "!" before an ordinary link. Any other "<" is
-// shown as text rather than parsed, so raw HTML cannot load anything either,
-// while placeholders such as <name> stay readable. Code is left alone.
+// out in its URL without a click, and raw HTML could do the same with <img>.
+// So, everywhere in the text, code included, since nothing here can tell code
+// apart exactly as Qt does: "![" never stays together (any image form, nested,
+// reference or shortcut, becomes "!" before an ordinary link), and "<" never
+// starts a tag, comment or declaration. The word joiner put between them is
+// invisible, so code and placeholders such as <name> read as before; copying
+// an answer takes the original text, not this.
 function safeMarkdown(text) {
   return outsideCode(text, function(md) {
-    return md
-      // Autolinks look like tags; keep them as ordinary links first.
-      .replace(/<(https?:\/\/[^\s<>]+)>/gi, "[$1]($1)")
-      .replace(/!\[/g, "&#33;[")
-      .replace(/</g, "&lt;")
+    // Autolinks look like tags; keep them as ordinary links first.
+    return md.replace(/<(https?:\/\/[^\s<>]+)>/gi, "[$1]($1)")
   })
+    .replace(/!\[/g, "!" + WJ + "[")
+    .replace(/<(?=[A-Za-z\/!?])/g, "<" + WJ)
 }
 
 // Qt's Markdown renderer ignores linkColor, but honours <font> inside link
-// text. Run after safeMarkdown, so these are the only tags in the text.
+// text. Run after safeMarkdown, so these are the only tags in the text; a
+// wrong guess at code here only shows the colour tag as text.
 function colorLinks(markdown, color) {
   var c = String(color || "")
   if (!/^#[0-9a-fA-F]{6}$/.test(c)) return String(markdown || "")
