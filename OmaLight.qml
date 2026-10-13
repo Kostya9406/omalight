@@ -120,6 +120,8 @@ Item {
   function close() {
     root.opened = false
     root.stopAnswer()
+    fileDebounce.stop()
+    root.hoveredLink = ""
   }
 
   function dismiss() {
@@ -134,11 +136,22 @@ Item {
 
   // Everything that can change between opens: open windows, keybindings,
   // menu conditions, apps hidden by the desktop.
+  // Windows change all the time; the rest is slower to ask about (the menu
+  // guards fork per condition), so it is asked again at most once a minute.
+  property real slowRefreshedAt: 0
   function refreshSources() {
     if (!clientsProc.running) clientsProc.running = true
+    if (Date.now() - root.slowRefreshedAt < 60000) return
+    root.slowRefreshedAt = Date.now()
     if (!bindingsProc.running) bindingsProc.running = true
     if (!hiddenProc.running) hiddenProc.running = true
     root.runMenuGuards()
+  }
+
+  // Sources arrive after the bar is already open; show them without losing the
+  // row the user picked.
+  function sourcesChanged() {
+    if (root.opened && !root.hasAnswer && root.query.trim()) root.rebuildRows()
   }
 
   function saveSettings() {
@@ -208,7 +221,7 @@ Item {
           Math.min(Search.rowScore(c["class"], "", q), Search.rowScore(c.title, "", q)), 1)
     }
 
-    var actions = Search.searchMenu(root.menu, root.menuHidden, q, 5)
+    var actions = Search.searchMenu(root.menu, root.menuHidden, q, 5, root.usage, Date.now())
     for (var a = 0; a < actions.length; a++) {
       var m = actions[a]
       var where = ["Omarchy"].concat(m.path).join(" › ")
@@ -231,8 +244,14 @@ Item {
                    path: f.path, dir: f.dir })
       }
     }
+    var picked = root.userMoved ? root.rows[root.selectedIndex] : null
     root.rows = out
     pointerGate.reset()
+    if (picked) {
+      for (var k = 0; k < out.length; k++) {
+        if (out[k].kind === picked.kind && out[k].title === picked.title && out[k].subtitle === picked.subtitle) { root.selectedIndex = k; break }
+      }
+    }
     if (root.selectedIndex >= out.length) root.selectedIndex = Math.max(0, out.length - 1)
   }
 
@@ -264,10 +283,14 @@ Item {
 
   function runMenuGuards() {
     var script = Search.menuGuardScript(root.menu)
-    if (!script || guardProc.running) return
+    if (!script) return
+    // A run for an older menu finishes first; then this one goes again.
+    if (guardProc.running) { guardProc.again = true; return }
+    guardProc.again = false
     guardProc.forMenu = root.menu
     guardProc.command = ["bash", "-lc", script]
     guardProc.running = true
+    guardTimeout.restart()
   }
 
   function loadMenu() {
@@ -304,7 +327,8 @@ Item {
       root.dismiss()
       // The address passed /^0x[0-9a-f]+$/ in Search.searchWindows, and still only reaches bash as "$1".
       root.run(["bash", "-c",
-        'hyprctl dispatch "hl.dsp.focus({ window = \\"address:$1\\" })" >/dev/null 2>&1 || hyprctl dispatch focuswindow "address:$1"',
+        // Lua dispatch counts as done only on status 0 with empty or "ok" output, as in omarchy-menu-keybindings.
+        'out=$(hyprctl dispatch "hl.dsp.focus({ window = \\"address:$1\\" })" 2>&1) && { [ -z "$out" ] || [ "$out" = ok ]; } || hyprctl dispatch focuswindow "address:$1"',
         "bash", row.address])
     } else if (row.kind === "action") {
       root.noteUse("menu:" + row.id)
@@ -367,10 +391,16 @@ Item {
     function onActiveToplevelChanged() { root.checkLaunched() }
   }
 
+  // As in the Omarchy menu: only a launch still without a window after two
+  // seconds gets the notice, so fast apps never flash it.
   Timer {
     id: launchDelay
-    interval: 450
+    interval: 2000
     onTriggered: {
+      if (root.toplevelCount() > root.launchToplevels || ToplevelManager.activeToplevel !== root.launchActive) {
+        launchTimeout.stop()
+        return
+      }
       root.launchOsdOpen = true
       Quickshell.execDetached(["omarchy-shell", "osd", "show",
         JSON.stringify({ icon: "󱓞", message: root.tr("launching") + root.launchName + "…", duration: 0 })])
@@ -506,6 +536,7 @@ Item {
     root.turns = []
     root.sessionId = ""
     root.notice = ""
+    root.hoveredLink = ""
   }
 
   function copyAnswer() {
@@ -642,25 +673,41 @@ Item {
         .filter(function(v) { return String(v || "").length > 0 }).join(":")]
     stdout: StdioCollector {
       id: hiddenOut
-      onStreamFinished: root.hiddenIds = Search.parseHiddenIds(hiddenOut.text)
+      onStreamFinished: { root.hiddenIds = Search.parseHiddenIds(hiddenOut.text); root.sourcesChanged() }
     }
   }
 
   Process {
     id: guardProc
     property var forMenu: null
+    property bool again: false
     stdout: StdioCollector {
       id: guardOut
-      onStreamFinished: if (guardProc.forMenu === root.menu) root.menuHidden = Search.parseGuardOutput(root.menu, guardOut.text)
+      onStreamFinished: {
+        if (guardProc.forMenu !== root.menu) return
+        root.menuHidden = Search.parseGuardOutput(root.menu, guardOut.text)
+        root.sourcesChanged()
+      }
     }
+    onExited: {
+      guardTimeout.stop()
+      if (guardProc.again || guardProc.forMenu !== root.menu) Qt.callLater(root.runMenuGuards)
+    }
+  }
+
+  // A `when:` that hangs must not leave the guards running for good.
+  Timer {
+    id: guardTimeout
+    interval: 5000
+    onTriggered: guardProc.running = false
   }
 
   Process {
     id: bindingsProc
-    command: ["bash", "-lc", "omarchy-menu-keybindings --print 2>/dev/null"]
+    command: ["bash", "-c", "omarchy-menu-keybindings --print 2>/dev/null"]
     stdout: StdioCollector {
       id: bindingsOut
-      onStreamFinished: root.bindings = Search.parseKeybindings(bindingsOut.text)
+      onStreamFinished: { root.bindings = Search.parseKeybindings(bindingsOut.text); root.sourcesChanged() }
     }
   }
 
@@ -671,7 +718,7 @@ Item {
       id: clientsOut
       onStreamFinished: {
         try { root.clients = JSON.parse(clientsOut.text) } catch (e) { root.clients = [] }
-        if (root.opened && !root.hasAnswer && root.query.trim()) root.rebuildRows()
+        root.sourcesChanged()
       }
     }
   }

@@ -31,11 +31,12 @@ BarWidget {
     tooltipText: {
       var tip = Strings.tr("widgetTip", root.ru)
       var l = root.limits
-      if (l && l.session && l.week)
-        tip += "\n" + Strings.tr("limitsTip", root.ru).replace("%1", l.session.percent).replace("%2", l.week.percent)
+      if (l && l.session) tip += "\n" + Strings.tr("limitSession", root.ru) + l.session.percent + "%"
+      if (l && l.week) tip += "\n" + Strings.tr("limitWeek", root.ru) + l.week.percent + "%"
       return tip
     }
     onPressed: function(b) {
+      if (b !== Qt.LeftButton) return
       Quickshell.execDetached(["omarchy-shell", "shell", "toggle", root.moduleName, "{}"])
     }
 

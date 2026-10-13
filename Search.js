@@ -163,7 +163,9 @@ function outsideCode(text, fn) {
 
 // Model output is untrusted (web pages it read can steer it). Qt's Markdown
 // renderer fetches images on its own, so an image could carry the conversation
-// out in its URL without a click: keep only the alt text. Any other "<" is
+// out in its URL without a click. Rather than chase every image form (nested,
+// reference, shortcut), "![" is never left intact: it becomes "&#33;[", which
+// renders as "!" before an ordinary link. Any other "<" is
 // shown as text rather than parsed, so raw HTML cannot load anything either,
 // while placeholders such as <name> stay readable. Code is left alone.
 function safeMarkdown(text) {
@@ -171,9 +173,7 @@ function safeMarkdown(text) {
     return md
       // Autolinks look like tags; keep them as ordinary links first.
       .replace(/<(https?:\/\/[^\s<>]+)>/gi, "[$1]($1)")
-      .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
-      .replace(/!\[([^\]]*)\]\[[^\]]*\]/g, "$1")
-      .replace(/^\s*\[[^\]]+\]:\s*\S+.*$/gm, "")
+      .replace(/!\[/g, "&#33;[")
       .replace(/</g, "&lt;")
   })
 }
@@ -184,7 +184,10 @@ function colorLinks(markdown, color) {
   var c = String(color || "")
   if (!/^#[0-9a-fA-F]{6}$/.test(c)) return String(markdown || "")
   return outsideCode(markdown, function(md) {
-    return md.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, "[<font color='" + c + "'>$1</font>]($2)")
+    // The link text loses any "<" or ">", so nothing it holds can complete a tag around <font>.
+    return md.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, function(all, label, url) {
+      return "[<font color='" + c + "'>" + label.replace(/[<>]/g, "") + "</font>](" + url + ")"
+    })
   })
 }
 
@@ -362,7 +365,7 @@ function menuHiddenUpwards(menu, hidden, id) {
 }
 
 // Searchable rows: actions run their command, submenus open the Omarchy menu there.
-function searchMenu(menu, hidden, query, limit) {
+function searchMenu(menu, hidden, query, limit, usage, now) {
   var list = []
   for (var i = 0; i < menu.order.length; i++) {
     var e = menu.items[menu.order[i]]
@@ -374,7 +377,7 @@ function searchMenu(menu, hidden, query, limit) {
   var found = topScored(list, function(e) {
     var aliases = Array.isArray(e.aliases) ? e.aliases.join(" ") : String(e.aliases || "")
     return textScore(e.label, [e.description || "", aliases, e.id.replace(/[.\-]/g, " ")].join(" "), query)
-  }, limit || 5)
+  }, limit || 5, function(a, b) { return frecency(usage, "menu:" + b.id, now) - frecency(usage, "menu:" + a.id, now) })
   return found.map(function(e) {
     var path = menuPath(menu.items, e.id)
     var aliases = Array.isArray(e.aliases) ? e.aliases.join(" ") : String(e.aliases || "")
@@ -436,11 +439,15 @@ function searchWindows(clients, query, limit) {
 
 // MARK: calculator
 
-// "2*(3+4)", "15% of 80", "2^10", "1,5 + 2". No eval: a small recursive-descent
+// "2*(3+4)", "2^10", "1,5 + 2", "-2^2". No eval: a small recursive-descent
 // parser over numbers, + - * / % ^ and parentheses. Returns null unless the
-// text is a complete expression with at least one operator.
+// text is a complete expression with at least one operator, and for text that
+// is more likely a date or a phone number (2025-10-13, 8-800-555-35-35) or a
+// number with thousands separators (1,000), so Enter still opens the file.
 function calculate(text) {
-  var src = String(text || "").trim().replace(/×/g, "*").replace(/÷/g, "/").replace(/(\d),(\d)/g, "$1.$2")
+  var raw = String(text || "").trim()
+  if (/^\d+([-/.]\d+){2,}$/.test(raw) || /\d,\d{3}(\D|$)/.test(raw)) return null
+  var src = raw.replace(/×/g, "*").replace(/÷/g, "/").replace(/(\d),(\d)/g, "$1.$2")
   if (!/^[\d\s.+\-*/%^()]+$/.test(src) || !/[+\-*/%^]/.test(src.replace(/^\s*-/, "")) || !/\d/.test(src)) return null
   var pos = 0
   function peek() { while (src.charAt(pos) === " ") pos++; return src.charAt(pos) }
@@ -453,11 +460,13 @@ function calculate(text) {
   function primary() {
     var c = peek()
     if (c === "(") { pos++; var v = expr(); if (peek() !== ")") throw 0; pos++; return v }
-    if (c === "-") { pos++; return -primary() }
-    if (c === "+") { pos++; return primary() }
     return number()
   }
+  // Unary minus binds looser than ^, as in maths: -2^2 is -4.
   function power() {
+    var c = peek()
+    if (c === "-") { pos++; return -power() }
+    if (c === "+") { pos++; return power() }
     var base = primary()
     if (peek() === "^") { pos++; return Math.pow(base, power()) }
     return base
@@ -484,8 +493,8 @@ function calculate(text) {
   try {
     var result = expr()
     if (peek() !== "") return null
-    if (!isFinite(result)) return null
-    return Math.round(result * 1e10) / 1e10
+    var rounded = Math.round(result * 1e10) / 1e10
+    return isFinite(rounded) ? rounded : null
   } catch (e) {
     return null
   }

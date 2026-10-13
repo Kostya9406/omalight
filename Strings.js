@@ -34,7 +34,8 @@ var TEXT = {
   limitShort:   ["5h ", "5ч "],
   modelHint:    ["Ctrl+M or click: switch model", "Ctrl+M или клик: сменить модель"],
   widgetTip:    ["OmaLight · Alt+Space", "OmaLight · Alt+Space"],
-  limitsTip:    ["Claude limits: session %1% · week %2%", "Лимиты Claude: сессия %1% · неделя %2%"]
+  limitSession: ["Claude session (5h): ", "Сессия Claude (5ч): "],
+  limitWeek:    ["Claude week: ", "Неделя Claude: "]
 }
 
 function isRussian(localeName) {
