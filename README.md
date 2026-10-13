@@ -18,7 +18,7 @@
 
 - Omarchy with the Quickshell-based `omarchy-shell` (Omarchy Quattro).
 - [Claude Code](https://claude.com/claude-code) installed and signed in: run `claude` once in a terminal and log in.
-- `plocate` for file search. Omarchy ships it; the index refreshes daily, or run `sudo updatedb` for an immediate refresh.
+- `plocate` and `fd` for file search; Omarchy ships both. The plocate index refreshes daily, and `fd` covers whatever changed since, so new files are found right away.
 
 ## Install
 
@@ -91,6 +91,7 @@ Remove the `OmaLight` line from `~/.config/hypr/bindings.lua`.
 
 ## Development
 
+- `files.sh`: the file search (plocate, plus fd since the last index refresh); try it with `bash files.sh <name>`.
 - `OmaLight.qml`: the overlay. `BarWidget.qml`: the bar mark. `Search.js`: matching, ranking, the calculator, the Omarchy menu and keybinding readers, and stream parsing. `Strings.js`: interface text. `Icon.js` and `YinYang.qml`: the mark.
 - `node tests/search.test.js` runs the logic tests.
 - `node tools/make-icon.js [color] > icon.svg` redraws the icon from the same grid the overlay paints.

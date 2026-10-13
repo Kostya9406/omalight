@@ -24,6 +24,7 @@ Item {
   // A stand-in for omarchy-menu-select, so a keybinding row can run through
   // Omarchy's own omarchy-menu-keybindings, which knows how to dispatch Lua binds.
   readonly property string pickerDir: root.stateDir + "/picker"
+  readonly property string filesScript: decodeURIComponent(Qt.resolvedUrl("files.sh").toString().replace(/^file:\/\//, ""))
   readonly property string skillDir: root.omarchyPath + "/default/agents/skills/omarchy"
 
   // Models Ctrl+M cycles through; the aliases always resolve to the newest of each.
@@ -270,14 +271,8 @@ Item {
     if (q.length < 2 || root.hasAnswer) return
     if (fileProc.running) return // onExited picks the newest query up
     fileProc.searched = q
-    fileProc.command = ["bash", "-c",
-      // The first line names the query, so the output can never be matched to a newer one.
-      'printf "q\\t%s\\n" "$1"; ' +
-      // Directories get a "d" tag so the row can show a folder; hidden paths and
-      // anything outside home are dropped before the cut so they cannot crowd it.
-      'plocate -i -b -- "$1" 2>/dev/null | grep -F "$HOME/" | grep -v -e "/\\." -e "/node_modules/" | head -n 300 |' +
-      ' while IFS= read -r p; do if [ -d "$p" ]; then printf "d\\t%s\\n" "$p"; else printf "f\\t%s\\n" "$p"; fi; done',
-      "bash", q]
+    // files.sh: plocate's index plus fd for what changed since it was built.
+    fileProc.command = ["bash", root.filesScript, q]
     fileProc.running = true
   }
 
