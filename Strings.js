@@ -35,7 +35,8 @@ var TEXT = {
   modelHint:    ["Ctrl+M or click: switch model", "Ctrl+M или клик: сменить модель"],
   widgetTip:    ["OmaLight · Alt+Space", "OmaLight · Alt+Space"],
   limitSession: ["Claude session (5h): ", "Сессия Claude (5ч): "],
-  limitWeek:    ["Claude week: ", "Неделя Claude: "]
+  limitWeek:    ["Claude week: ", "Неделя Claude: "],
+  noOpener:     ["No app can open this file; showing its folder.", "Нет приложения для этого файла, открываю папку с ним."]
 }
 
 function isRussian(localeName) {

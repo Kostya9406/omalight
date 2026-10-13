@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.kostya9406.omalight",
   "name": "OmaLight",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "author": "Kostya9406",
   "license": "MIT",
   "description": "Spotlight-style bar for Omarchy: apps, open windows, Omarchy actions, keybindings, files and sums in one input, or ask Claude and read the answer streamed in place. Uses your Claude Code subscription, no API key.",

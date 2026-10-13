@@ -92,6 +92,7 @@ Remove the `OmaLight` line from `~/.config/hypr/bindings.lua`.
 ## Development
 
 - `files.sh`: the file search (plocate, plus fd since the last index refresh); try it with `bash files.sh <name>`.
+- `open.sh`: opens a result in its default app through `gio`, so apps that run in a terminal (nvim for text files) open in your terminal; with no app for the type it shows the file's folder.
 - `OmaLight.qml`: the overlay. `BarWidget.qml`: the bar mark. `Search.js`: matching, ranking, the calculator, the Omarchy menu and keybinding readers, and stream parsing. `Strings.js`: interface text. `Icon.js` and `YinYang.qml`: the mark.
 - `node tests/search.test.js` runs the logic tests.
 - `node tools/make-icon.js [color] > icon.svg` redraws the icon from the same grid the overlay paints.

@@ -25,6 +25,7 @@ Item {
   // Omarchy's own omarchy-menu-keybindings, which knows how to dispatch Lua binds.
   readonly property string pickerDir: root.stateDir + "/picker"
   readonly property string filesScript: decodeURIComponent(Qt.resolvedUrl("files.sh").toString().replace(/^file:\/\//, ""))
+  readonly property string openScript: decodeURIComponent(Qt.resolvedUrl("open.sh").toString().replace(/^file:\/\//, ""))
   readonly property string skillDir: root.omarchyPath + "/default/agents/skills/omarchy"
 
   // Models Ctrl+M cycles through; the aliases always resolve to the newest of each.
@@ -305,7 +306,8 @@ Item {
     if (!row) return
     if (row.kind === "ask") { root.ask(row.subtitle); return }
     if (row.kind === "file") {
-      root.run(["uwsm-app", "--", "xdg-open", reveal && !row.dir ? Search.dirName(row.path) : row.path])
+      // open.sh rather than xdg-open: it also opens files whose app runs in a terminal (nvim for text).
+      root.run(["uwsm-app", "--", "bash", root.openScript, reveal && !row.dir ? Search.dirName(row.path) : row.path, root.tr("noOpener")])
       root.dismiss()
       return
     }
