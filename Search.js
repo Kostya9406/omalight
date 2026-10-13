@@ -50,21 +50,27 @@ function appScore(entry, query) {
   return -1
 }
 
-function searchApps(entries, query) {
+// Apps matching the query, minus hidden ones; within the same match quality the
+// more often and recently launched app comes first.
+function searchApps(entries, query, hidden, usage, now) {
   var scored = []
   var seen = {}
   for (var i = 0; i < entries.length; i++) {
     var e = entries[i]
     if (!e || e.noDisplay) continue
+    var id = String(e.id || "")
+    if (id.slice(-8) === ".desktop") id = id.slice(0, -8)
+    if (hidden && hidden[id]) continue
     var score = appScore(e, query)
     if (score < 0) continue
-    var key = String(e.id || e.name)
+    var key = id || String(e.name)
     if (seen[key]) continue
     seen[key] = true
-    scored.push({ score: score, entry: e })
+    scored.push({ score: score, entry: e, used: frecency(usage, "app:" + id, now) })
   }
   scored.sort(function(a, b) {
     if (a.score !== b.score) return a.score - b.score
+    if (a.used !== b.used) return b.used - a.used
     return String(a.entry.name).localeCompare(String(b.entry.name))
   })
   return scored.slice(0, MAX_APPS).map(function(s) { return s.entry })
@@ -151,10 +157,20 @@ function parseStreamLine(line) {
 // out in its URL without a click: keep only the alt text. Raw HTML goes too.
 function safeMarkdown(text) {
   return String(text || "")
+    // Autolinks look like tags; keep them as ordinary links first.
+    .replace(/<(https?:\/\/[^\s<>]+)>/gi, "[$1]($1)")
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/!\[([^\]]*)\]\[[^\]]*\]/g, "$1")
     .replace(/^\s*\[[^\]]+\]:\s*\S+.*$/gm, "")
     .replace(/<\/?[A-Za-z][^>]*>/g, "")
+}
+
+// Qt's Markdown renderer ignores linkColor, but honours <font> inside link
+// text. Run after safeMarkdown, so the only tags left are these.
+function colorLinks(markdown, color) {
+  var c = String(color || "")
+  if (!/^#[0-9a-fA-F]{6}$/.test(c)) return String(markdown || "")
+  return String(markdown || "").replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, "[<font color='" + c + "'>$1</font>]($2)")
 }
 
 // Only plain web links open from an answer; file:, custom schemes and relative
@@ -172,9 +188,321 @@ function explainError(text) {
   return t ? { key: "", detail: t } : { key: "errFailed", detail: "" }
 }
 
+// MARK: shared scoring
+
+// Lower is better; -1 means no match. Prefix of the name, then a word start in
+// it, then anywhere in it, then anywhere in the extra text.
+function textScore(name, extra, query) {
+  var q = String(query || "").trim().toLowerCase()
+  if (!q) return -1
+  var n = String(name || "").toLowerCase()
+  if (n.indexOf(q) === 0) return 0
+  var at = n.indexOf(q)
+  if (at > 0 && /[\s\-_.›/]/.test(n.charAt(at - 1))) return 1
+  if (at > 0) return 2
+  if (String(extra || "").toLowerCase().indexOf(q) >= 0) return 3
+  return -1
+}
+
+function topScored(list, scoreOf, limit, tieBreak) {
+  var scored = []
+  for (var i = 0; i < list.length; i++) {
+    var score = scoreOf(list[i])
+    if (score >= 0) scored.push({ score: score, item: list[i], at: i })
+  }
+  scored.sort(function(a, b) {
+    if (a.score !== b.score) return a.score - b.score
+    var t = tieBreak ? tieBreak(a.item, b.item) : 0
+    return t !== 0 ? t : a.at - b.at
+  })
+  return scored.slice(0, limit).map(function(s) { return s.item })
+}
+
+// The match quality of a result row, for ranking rows of different kinds together.
+function rowScore(name, extra, query) {
+  var s = textScore(name, extra, query)
+  return s < 0 ? 9 : s
+}
+
+// MARK: hidden apps
+
+// launcher.hides and hidden-entries.sh output: one desktop id per line, ".desktop" optional.
+function parseHiddenIds(text) {
+  var out = {}
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var id = lines[i].trim()
+    if (id.slice(-8) === ".desktop") id = id.slice(0, -8)
+    if (id && id.charAt(0) !== "#") out[id] = true
+  }
+  return out
+}
+
+// MARK: frecency
+
+// usage: { "<key>": { count, last } } with `last` in ms. Recent and frequent wins;
+// a launch counts half as much after a week.
+function frecency(usage, key, now) {
+  var u = usage && usage[key]
+  if (!u || !u.count) return 0
+  var days = Math.max(0, ((now || Date.now()) - (u.last || 0)) / 86400000)
+  return u.count / (1 + days / 7)
+}
+
+function recordUse(usage, key, now) {
+  var next = {}
+  for (var k in usage || {}) next[k] = usage[k]
+  var prior = next[key] || { count: 0, last: 0 }
+  next[key] = { count: Math.min(prior.count + 1, 1000), last: now || Date.now() }
+  // Keep the file small: drop the least used keys beyond 300.
+  var keys = Object.keys(next)
+  if (keys.length > 300) {
+    keys.sort(function(a, b) { return frecency(next, a, now) - frecency(next, b, now) })
+    for (var i = 0; i < keys.length - 300; i++) delete next[keys[i]]
+  }
+  return next
+}
+
+// MARK: Omarchy menu
+
+function stripJsonc(raw) {
+  return String(raw || "")
+    .replace(/^\s*\/\/[^\n]*(\n|$)/gm, "")
+    .replace(/,(\s*[}\]])/g, "$1")
+}
+
+function parseJsoncObject(raw) {
+  try {
+    var parsed = JSON.parse(stripJsonc(raw))
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+      return parsed.items && typeof parsed.items === "object" && !Array.isArray(parsed.items) ? parsed.items : parsed
+  } catch (e) {
+  }
+  return {}
+}
+
+// The default menu and the user's extension, merged the way the Omarchy menu
+// merges them: the same id extends or overrides the default entry.
+function parseMenu(defaultRaw, userRaw) {
+  var items = {}
+  var order = []
+  var sources = [parseJsoncObject(defaultRaw), parseJsoncObject(userRaw)]
+  for (var s = 0; s < sources.length; s++) {
+    for (var id in sources[s]) {
+      var v = sources[s][id]
+      if (!v || typeof v !== "object" || Array.isArray(v)) continue
+      if (!items[id]) { items[id] = { id: id }; order.push(id) }
+      for (var k in v) items[id][k] = v[k]
+    }
+  }
+  for (var i = 0; i < order.length; i++) {
+    var e = items[order[i]]
+    if (e.parent === undefined) e.parent = e.id.indexOf(".") >= 0 ? e.id.split(".").slice(0, -1).join(".") : "root"
+    e.label = String(e.label || e.id)
+  }
+  return { items: items, order: order }
+}
+
+function menuPath(items, id) {
+  var parts = []
+  var guard = 0
+  var cur = items[id]
+  while (cur && cur.parent && cur.parent !== "root" && guard++ < 16) {
+    cur = items[cur.parent]
+    if (cur) parts.unshift(cur.label)
+  }
+  return parts
+}
+
+// One bash script answering every `when:` as "<index>:<0|1>" lines. Ids are
+// never put in the script, only their index, so an id cannot break out of it.
+function menuGuardScript(menu) {
+  var lines = []
+  for (var i = 0; i < menu.order.length; i++) {
+    var e = menu.items[menu.order[i]]
+    if (e && typeof e.when === "string" && e.when)
+      lines.push("if { " + e.when + "; } >/dev/null 2>&1 </dev/null; then echo " + i + ":1; else echo " + i + ":0; fi")
+  }
+  return lines.join("\n")
+}
+
+function parseGuardOutput(menu, text) {
+  var hidden = {}
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var m = /^(\d+):0$/.exec(lines[i].trim())
+    if (m && menu.order[+m[1]]) hidden[menu.order[+m[1]]] = true
+  }
+  return hidden
+}
+
+function menuHiddenUpwards(menu, hidden, id) {
+  var guard = 0
+  var cur = menu.items[id]
+  while (cur && guard++ < 16) {
+    if (hidden[cur.id]) return true
+    cur = cur.parent && cur.parent !== "root" ? menu.items[cur.parent] : null
+  }
+  return false
+}
+
+// Searchable rows: actions run their command, submenus open the Omarchy menu there.
+function searchMenu(menu, hidden, query, limit) {
+  var list = []
+  for (var i = 0; i < menu.order.length; i++) {
+    var e = menu.items[menu.order[i]]
+    if (!e || e.parent === "") continue
+    if (!e.action && !e.target && e.provider === undefined && !hasChildren(menu, e.id)) continue
+    if (menuHiddenUpwards(menu, hidden || {}, e.id)) continue
+    list.push(e)
+  }
+  var found = topScored(list, function(e) {
+    var aliases = Array.isArray(e.aliases) ? e.aliases.join(" ") : String(e.aliases || "")
+    return textScore(e.label, [e.description || "", aliases, e.id.replace(/[.\-]/g, " ")].join(" "), query)
+  }, limit || 5)
+  return found.map(function(e) {
+    var path = menuPath(menu.items, e.id)
+    var aliases = Array.isArray(e.aliases) ? e.aliases.join(" ") : String(e.aliases || "")
+    return {
+      score: rowScore(e.label, [e.description || "", aliases, e.id.replace(/[.\-]/g, " ")].join(" "), query),
+      id: e.id, label: e.label, icon: String(e.icon || ""), description: String(e.description || ""),
+      path: path, action: e.action ? String(e.action) : "",
+      // A link opens its target; a submenu opens itself.
+      route: e.action ? "" : (e.target ? String(e.target) : e.id)
+    }
+  })
+}
+
+function hasChildren(menu, id) {
+  for (var i = 0; i < menu.order.length; i++) {
+    var e = menu.items[menu.order[i]]
+    if (e && e.parent === id) return true
+  }
+  return false
+}
+
+// MARK: keybindings
+
+// `omarchy-menu-keybindings --print`: "SUPER SHIFT + F      → File manager".
+function parseKeybindings(text) {
+  var out = []
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i]
+    var at = line.indexOf("→")
+    if (at < 0) continue
+    var keys = line.slice(0, at).trim().replace(/\s+\+\s+/g, " + ")
+    var desc = line.slice(at + 1).trim()
+    if (keys && desc) out.push({ keys: keys, desc: desc, line: line })
+  }
+  return out
+}
+
+function searchBindings(list, query, limit) {
+  return topScored(list || [], function(b) { return textScore(b.desc, b.keys, query) }, limit || 3)
+}
+
+// MARK: windows
+
+// `hyprctl clients -j` → open windows matching by title or class, never this bar.
+function searchWindows(clients, query, limit) {
+  var list = (Array.isArray(clients) ? clients : []).filter(function(c) {
+    return c && c.mapped !== false && c.hidden !== true && /^0x[0-9a-fA-F]+$/.test(String(c.address || ""))
+      && String(c.title || c["class"] || "")
+  })
+  return topScored(list, function(c) {
+    var cls = String(c["class"] || "")
+    var s1 = textScore(cls, "", query)
+    var s2 = textScore(c.title, "", query)
+    var best = s1 < 0 ? s2 : s2 < 0 ? s1 : Math.min(s1, s2)
+    return best
+  }, limit || 3, function(a, b) { return (a.focusHistoryID || 0) - (b.focusHistoryID || 0) })
+}
+
+// MARK: calculator
+
+// "2*(3+4)", "15% of 80", "2^10", "1,5 + 2". No eval: a small recursive-descent
+// parser over numbers, + - * / % ^ and parentheses. Returns null unless the
+// text is a complete expression with at least one operator.
+function calculate(text) {
+  var src = String(text || "").trim().replace(/×/g, "*").replace(/÷/g, "/").replace(/(\d),(\d)/g, "$1.$2")
+  if (!/^[\d\s.+\-*/%^()]+$/.test(src) || !/[+\-*/%^]/.test(src.replace(/^\s*-/, "")) || !/\d/.test(src)) return null
+  var pos = 0
+  function peek() { while (src.charAt(pos) === " ") pos++; return src.charAt(pos) }
+  function number() {
+    var m = /^\d*\.?\d+(?:e[+-]?\d+)?/i.exec(src.slice(pos))
+    if (!m) throw 0
+    pos += m[0].length
+    return parseFloat(m[0])
+  }
+  function primary() {
+    var c = peek()
+    if (c === "(") { pos++; var v = expr(); if (peek() !== ")") throw 0; pos++; return v }
+    if (c === "-") { pos++; return -primary() }
+    if (c === "+") { pos++; return primary() }
+    return number()
+  }
+  function power() {
+    var base = primary()
+    if (peek() === "^") { pos++; return Math.pow(base, power()) }
+    return base
+  }
+  function term() {
+    var v = power()
+    for (;;) {
+      var c = peek()
+      if (c === "*") { pos++; v *= power() }
+      else if (c === "/") { pos++; v /= power() }
+      else if (c === "%") { pos++; v = v % power() }
+      else return v
+    }
+  }
+  function expr() {
+    var v = term()
+    for (;;) {
+      var c = peek()
+      if (c === "+") { pos++; v += term() }
+      else if (c === "-") { pos++; v -= term() }
+      else return v
+    }
+  }
+  try {
+    var result = expr()
+    if (peek() !== "") return null
+    if (!isFinite(result)) return null
+    return Math.round(result * 1e10) / 1e10
+  } catch (e) {
+    return null
+  }
+}
+
+// MARK: Claude limits
+
+// The record Omarchy's agent-usage collector writes for Claude → the two limits.
+function claudeUsage(raw) {
+  var d
+  try { d = JSON.parse(raw) } catch (e) { return null }
+  if (!d || !Array.isArray(d.limits) || d.limits.length === 0) return null
+  function pick(re) {
+    for (var i = 0; i < d.limits.length; i++) {
+      var l = d.limits[i]
+      if (l && re.test(String(l.label || "")) && typeof l.percent === "number")
+        return { percent: Math.round(l.percent * 100), resetsAt: String(l.resetsAt || "") }
+    }
+    return null
+  }
+  var session = pick(/session|5-hour/i)
+  var week = pick(/week|7-day/i)
+  return session || week ? { session: session, week: week } : null
+}
+
 if (typeof module !== "undefined") module.exports = {
   looksLikeQuestion: looksLikeQuestion, appScore: appScore, searchApps: searchApps,
   filterFiles: filterFiles, baseName: baseName, dirName: dirName, tildify: tildify,
   parseStreamLine: parseStreamLine, explainError: explainError,
-  safeMarkdown: safeMarkdown, isWebLink: isWebLink
+  safeMarkdown: safeMarkdown, isWebLink: isWebLink, colorLinks: colorLinks,
+  textScore: textScore, rowScore: rowScore, parseHiddenIds: parseHiddenIds, frecency: frecency, recordUse: recordUse,
+  stripJsonc: stripJsonc, parseMenu: parseMenu, menuPath: menuPath, menuGuardScript: menuGuardScript,
+  parseGuardOutput: parseGuardOutput, searchMenu: searchMenu, parseKeybindings: parseKeybindings,
+  searchBindings: searchBindings, searchWindows: searchWindows, calculate: calculate, claudeUsage: claudeUsage
 }

@@ -8,7 +8,8 @@ import "Search.js" as Search
 import "Strings.js" as Strings
 
 // OmaLight: a Spotlight-style bar for Omarchy, after Lumi (github.com/AlbertS15/Lumi).
-// One input finds apps and files, or asks Claude and streams the answer in place.
+// One input finds apps, open windows, Omarchy actions, keybindings and files,
+// does sums, or asks Claude and streams the answer in place.
 Item {
   id: root
 
@@ -18,26 +19,44 @@ Item {
 
   readonly property string pluginId: (root.manifest && root.manifest.id) || "io.github.kostya9406.omalight"
   readonly property string home: Quickshell.env("HOME")
-  // Claude runs from here, so its sessions stay out of real projects.
+  // Claude runs from here, so its sessions stay out of real projects; settings and launch counts live here too.
   readonly property string stateDir: root.home + "/.local/state/omalight"
-  // The alias always resolves to the newest Haiku; override with {"model": "..."} in the summon payload.
+  // A stand-in for omarchy-menu-select, so a keybinding row can run through
+  // Omarchy's own omarchy-menu-keybindings, which knows how to dispatch Lua binds.
+  readonly property string pickerDir: root.stateDir + "/picker"
+  readonly property string skillDir: root.omarchyPath + "/default/agents/skills/omarchy"
+
+  // Models Ctrl+M cycles through; the aliases always resolve to the newest of each.
+  readonly property var models: ["haiku", "sonnet", "opus"]
   property string model: "haiku"
 
   readonly property string systemPrompt:
     "You were called from OmaLight, a Spotlight-style quick bar on Omarchy Linux (Arch, Hyprland). " +
     "Answer briefly and to the point, in the language of the question. Start with the answer itself; " +
     "no filler, no restating the question, no offers of more help. " +
-    "Use Markdown only for lists, bold and code. If you are unsure or need fresh facts, say so or search the web."
+    "Use Markdown only for lists, bold and code. If you are unsure or need fresh facts, say so or search the web. " +
+    "You cannot read or edit files or run commands here, so tell the user exactly what to run or change. " +
+    "Omarchy reference documentation follows; trust it over general Hyprland knowledge (for example, " +
+    "Omarchy keybindings live in ~/.config/hypr/bindings.lua)."
 
   property bool opened: false
-  // "ru" or "en" from the summon payload; otherwise the system locale decides.
+  // "ru" or "en" from the summon payload or settings; otherwise the system locale decides.
   property string lang: ""
   readonly property bool ru: root.lang ? root.lang === "ru" : Strings.isRussian(Qt.locale().name)
   function tr(key) { return Strings.tr(key, root.ru) }
   property string query: ""
 
+  // What search draws on, refreshed on every open.
+  property var hiddenIds: ({})
+  property var configuredHiddenIds: ({})
+  property var usage: ({})
+  property var menu: ({ items: {}, order: [] })
+  property var menuHidden: ({})
+  property var bindings: []
+  property var clients: []
+  property var limits: null
+
   // Search mode.
-  property var apps: []
   property var files: []
   property string filesQuery: ""
   property var rows: []
@@ -64,6 +83,9 @@ Item {
   property color scrim: Color.menu.scrim
   property color selectedBackground: Color.menu.selectedBackground
   property color accent: Color.menu.selectedText
+  // "#rrggbb" for colouring links inside Markdown, which ignores linkColor.
+  readonly property string accentHex: "#" + [root.accent.r, root.accent.g, root.accent.b]
+    .map(function(v) { var h = Math.round(v * 255).toString(16); return h.length < 2 ? "0" + h : h }).join("")
   readonly property int cornerRadius: Style.cornerRadius
   property string fontFamily: Style.font.menuFamily
   property int contentMargin: Style.spacing.panelPadding
@@ -74,16 +96,24 @@ Item {
 
   // MARK: lifecycle
 
+  Component.onCompleted: setupProc.running = true
+
   function open(payloadJson) {
+    var changed = false
     try {
       var payload = JSON.parse(payloadJson || "{}")
-      if (payload && (payload.lang === "ru" || payload.lang === "en")) root.lang = payload.lang
-      if (payload && typeof payload.model === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(payload.model)) root.model = payload.model
+      if (payload && (payload.lang === "ru" || payload.lang === "en") && payload.lang !== root.lang) { root.lang = payload.lang; changed = true }
+      if (payload && typeof payload.model === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(payload.model) && payload.model !== root.model) {
+        root.model = payload.model
+        changed = true
+      }
     } catch (e) {
     }
+    if (changed) root.saveSettings()
     root.resetConversation()
     root.setQuery("")
     root.opened = true
+    root.refreshSources()
     Qt.callLater(function() { input.forceActiveFocus() })
   }
 
@@ -102,16 +132,39 @@ Item {
     else root.open("{}")
   }
 
+  // Everything that can change between opens: open windows, keybindings,
+  // menu conditions, apps hidden by the desktop.
+  function refreshSources() {
+    if (!clientsProc.running) clientsProc.running = true
+    if (!bindingsProc.running) bindingsProc.running = true
+    if (!hiddenProc.running) hiddenProc.running = true
+    root.runMenuGuards()
+  }
+
+  function saveSettings() {
+    settingsFile.setText(JSON.stringify({ model: root.model, lang: root.lang }) + "\n")
+  }
+
+  function cycleModel() {
+    var i = root.models.indexOf(root.model)
+    root.model = root.models[(i + 1) % root.models.length]
+    root.saveSettings()
+  }
+
+  function noteUse(key) {
+    root.usage = Search.recordUse(root.usage, key, Date.now())
+    usageFile.setText(JSON.stringify(root.usage) + "\n")
+  }
+
   // MARK: search
 
   function setQuery(text) {
     root.query = text
     if (input.text !== text) input.text = text
     if (root.hasAnswer) return
-    var q = text.trim()
-    root.apps = q ? Search.searchApps(DesktopEntries.applications.values || [], q) : []
     root.userMoved = false
     root.rebuildRows()
+    var q = text.trim()
     root.selectedIndex = Search.looksLikeQuestion(q) || root.rows.length < 2 ? 0 : 1
     if (q.length >= 2) fileDebounce.restart()
     else { fileDebounce.stop(); root.files = []; root.filesQuery = "" }
@@ -120,12 +173,57 @@ Item {
   function rebuildRows() {
     var q = root.query.trim()
     if (!q) { root.rows = []; return }
+    var hidden = {}
+    for (var h in root.configuredHiddenIds) hidden[h] = true
+    for (var h2 in root.hiddenIds) hidden[h2] = true
     var out = [{ kind: "ask", title: root.tr("ask"), subtitle: q }]
-    for (var i = 0; i < root.apps.length; i++) {
-      var e = root.apps[i]
-      out.push({ kind: "app", title: String(e.name || e.id), subtitle: String(e.genericName || e.comment || root.tr("app")),
-                 icon: String(e.icon || ""), id: String(e.id || "") })
+
+    var sum = Search.calculate(q)
+    if (sum !== null) out.push({ kind: "calc", title: "= " + sum, subtitle: root.tr("calcSub"), value: String(sum) })
+
+    // Apps, windows, Omarchy actions and keybindings rank together by how well
+    // they match, so an exact "Theme" action beats an app that only mentions themes.
+    // Actions and keybindings carry a small handicap, so "chrome" still opens the
+    // app first rather than the "make Chrome the default browser" action.
+    // On a tie the kinds keep this order.
+    var ranked = []
+    var handicap = [0, 0.5, 1.5, 1.5]
+    function add(row, score, kindOrder) {
+      ranked.push({ row: row, score: score + handicap[kindOrder], order: kindOrder, at: ranked.length })
     }
+
+    var apps = Search.searchApps(DesktopEntries.applications.values || [], q, hidden, root.usage, Date.now())
+    for (var i = 0; i < apps.length; i++) {
+      var e = apps[i]
+      add({ kind: "app", title: String(e.name || e.id), subtitle: String(e.genericName || e.comment || root.tr("app")),
+            icon: String(e.icon || ""), id: String(e.id || "") }, Search.appScore(e, q), 0)
+    }
+
+    var wins = Search.searchWindows(root.clients, q, 3)
+    for (var w = 0; w < wins.length; w++) {
+      var c = wins[w]
+      var ws = c.workspace && c.workspace.name ? " · " + root.tr("workspace") + c.workspace.name : ""
+      add({ kind: "window", title: String(c.title || c["class"]), subtitle: root.tr("window") + " · " + String(c["class"] || "") + ws,
+            address: String(c.address), icon: String(c["class"] || "").toLowerCase() },
+          Math.min(Search.rowScore(c["class"], "", q), Search.rowScore(c.title, "", q)), 1)
+    }
+
+    var actions = Search.searchMenu(root.menu, root.menuHidden, q, 5)
+    for (var a = 0; a < actions.length; a++) {
+      var m = actions[a]
+      var where = ["Omarchy"].concat(m.path).join(" › ")
+      add({ kind: "action", title: m.label, subtitle: where + (m.description ? " · " + m.description : ""),
+            glyph: m.icon, id: m.id, action: m.action, route: m.route }, m.score, 2)
+    }
+
+    var binds = Search.searchBindings(root.bindings, q, 3)
+    for (var b = 0; b < binds.length; b++)
+      add({ kind: "binding", title: binds[b].desc, subtitle: root.tr("binding") + " · " + binds[b].keys, line: binds[b].line },
+          Search.rowScore(binds[b].desc, binds[b].keys, q), 3)
+
+    ranked.sort(function(x, y) { return x.score - y.score || x.order - y.order || x.at - y.at })
+    for (var r = 0; r < ranked.length; r++) out.push(ranked[r].row)
+
     if (root.filesQuery === q) {
       for (var j = 0; j < root.files.length; j++) {
         var f = root.files[j]
@@ -143,7 +241,7 @@ Item {
     root.filesQuery = q
     if (root.hasAnswer || q !== root.query.trim()) return
     root.rebuildRows()
-    // A search lands on the first app or file; a question stays on the ask row.
+    // A search lands on the first result; a question stays on the ask row.
     if (!root.userMoved && !Search.looksLikeQuestion(q) && root.selectedIndex === 0 && root.rows.length > 1)
       root.selectedIndex = 1
   }
@@ -164,6 +262,19 @@ Item {
     fileProc.running = true
   }
 
+  function runMenuGuards() {
+    var script = Search.menuGuardScript(root.menu)
+    if (!script || guardProc.running) return
+    guardProc.forMenu = root.menu
+    guardProc.command = ["bash", "-lc", script]
+    guardProc.running = true
+  }
+
+  function loadMenu() {
+    root.menu = Search.parseMenu(defaultMenuFile.text(), userMenuFile.text())
+    root.runMenuGuards()
+  }
+
   function move(delta) {
     if (root.rows.length === 0) return
     root.userMoved = true
@@ -175,18 +286,101 @@ Item {
     var row = root.rows[index]
     if (!row) return
     if (row.kind === "ask") { root.ask(row.subtitle); return }
-    if (row.kind === "app") {
-      if (reveal) return
-      root.run(["uwsm-app", "--", "gtk-launch", row.id + ".desktop"])
-    } else if (row.kind === "file") {
+    if (row.kind === "file") {
       root.run(["uwsm-app", "--", "xdg-open", reveal && !row.dir ? Search.dirName(row.path) : row.path])
+      root.dismiss()
+      return
     }
-    root.dismiss()
+    if (reveal) return
+    if (row.kind === "calc") {
+      Quickshell.clipboardText = row.value
+      root.dismiss()
+    } else if (row.kind === "app") {
+      root.noteUse("app:" + row.id)
+      root.dismiss()
+      root.beginLaunchFeedback(row.title)
+      root.run(["uwsm-app", "--", "gtk-launch", row.id + ".desktop"])
+    } else if (row.kind === "window") {
+      root.dismiss()
+      // The address passed /^0x[0-9a-f]+$/ in Search.searchWindows, and still only reaches bash as "$1".
+      root.run(["bash", "-c",
+        'hyprctl dispatch "hl.dsp.focus({ window = \\"address:$1\\" })" >/dev/null 2>&1 || hyprctl dispatch focuswindow "address:$1"',
+        "bash", row.address])
+    } else if (row.kind === "action") {
+      root.noteUse("menu:" + row.id)
+      root.dismiss()
+      // Menu actions are the user's and Omarchy's own commands; run them the way the Omarchy menu does.
+      if (row.action) Quickshell.execDetached(["bash", "-lc", row.action])
+      else root.run(["omarchy-menu", "summon", row.route])
+    } else if (row.kind === "binding") {
+      root.dismiss()
+      // Give focus back to the window the binding acts on, then let Omarchy dispatch it.
+      root.run(["bash", "-c", 'sleep 0.15; PATH="$1:$PATH" OMALIGHT_PICK="$2" exec omarchy-menu-keybindings',
+                "bash", root.pickerDir, row.line])
+    }
   }
 
   // argv only ever lands in bash's positional parameters, so nothing typed is re-parsed.
   function run(argv) {
     Quickshell.execDetached(["bash", "-lc", 'exec "$@"', "bash"].concat(argv))
+  }
+
+  // MARK: launch feedback (as the Omarchy menu does it)
+
+  property int launchToplevels: 0
+  property var launchActive: null
+  property string launchName: ""
+  property bool launchOsdOpen: false
+
+  function toplevelCount() {
+    try { return ToplevelManager.toplevels.values.length } catch (e) { return 0 }
+  }
+
+  function beginLaunchFeedback(name) {
+    root.launchToplevels = root.toplevelCount()
+    root.launchActive = ToplevelManager.activeToplevel
+    root.launchName = name
+    launchDelay.restart()
+    launchTimeout.restart()
+  }
+
+  function endLaunchFeedback() {
+    launchDelay.stop()
+    launchTimeout.stop()
+    if (root.launchOsdOpen) Quickshell.execDetached(["omarchy-shell", "osd", "close"])
+    root.launchOsdOpen = false
+  }
+
+  function checkLaunched() {
+    if (!launchDelay.running && !launchTimeout.running) return
+    if (root.toplevelCount() <= root.launchToplevels && ToplevelManager.activeToplevel === root.launchActive) return
+    root.endLaunchFeedback()
+  }
+
+  Connections {
+    target: ToplevelManager.toplevels
+    function onValuesChanged() { root.checkLaunched() }
+  }
+
+  Connections {
+    target: ToplevelManager
+    function onActiveToplevelChanged() { root.checkLaunched() }
+  }
+
+  Timer {
+    id: launchDelay
+    interval: 450
+    onTriggered: {
+      root.launchOsdOpen = true
+      Quickshell.execDetached(["omarchy-shell", "osd", "show",
+        JSON.stringify({ icon: "󱓞", message: root.tr("launching") + root.launchName + "…", duration: 0 })])
+    }
+  }
+
+  Timer {
+    id: launchTimeout
+    interval: 15000
+    onTriggered: root.endLaunchFeedback()
   }
 
   // MARK: asking Claude
@@ -206,13 +400,15 @@ Item {
     input.text = ""
     var args = ["--safe-mode", "-p", "--model", root.model,
                 "--output-format", "stream-json", "--verbose", "--include-partial-messages",
-                "--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch,WebFetch",
-                "--append-system-prompt", root.systemPrompt]
+                "--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch,WebFetch"]
     if (root.sessionId) args.push("--resume", root.sessionId)
     var command = ["bash", "-lc",
       // The question goes in on stdin, never through a shell; exec so stopping the run stops claude.
-      'd=$1; q=$2; shift 2; mkdir -p "$d" && cd "$d" || exit 1; exec claude "$@" <<<"$q"',
-      "bash", root.stateDir, q].concat(args)
+      // Omarchy's own agent guide joins the system prompt, so answers fit this system.
+      'd=$1; q=$2; p=$3; k=$4; shift 4; mkdir -p "$d" && cd "$d" || exit 1; ' +
+      'for f in SKILL.md hyprland.md theming.md plugins.md; do [ -f "$k/$f" ] && p+=$\'\\n\\n\'"$(cat "$k/$f")"; done; ' +
+      'exec claude "$@" --append-system-prompt "$p" <<<"$q"',
+      "bash", root.stateDir, q, root.systemPrompt, root.skillDir].concat(args)
     if (askProc.running) {
       askProc.pending = command
       askProc.running = false
@@ -337,6 +533,7 @@ Item {
       else root.dismiss()
       return true
     }
+    if (ctrl && event.key === Qt.Key_M) { root.cycleModel(); return true }
     if (root.hasAnswer) {
       if (enter) { root.ask(root.query); return true }
       if (ctrl && event.key === Qt.Key_C && !input.selectedText) { root.copyAnswer(); return true }
@@ -358,6 +555,126 @@ Item {
 
   // Rows appearing under a still pointer must not steal the selection.
   PointerMoveGate { id: pointerGate; referenceItem: results }
+
+  // MARK: state files
+
+  // Creates the state folder and the picker stand-in: it drains the list it is
+  // given and answers with the line OmaLight already chose.
+  Process {
+    id: setupProc
+    command: ["bash", "-c",
+      'mkdir -p "$1" && printf "%s\\n" "#!/bin/sh" "cat >/dev/null" "printf \'%s\\\\n\' \\"\\$OMALIGHT_PICK\\"" > "$1/omarchy-menu-select" && chmod 755 "$1/omarchy-menu-select"',
+      "bash", root.pickerDir]
+    onExited: {
+      settingsFile.reload()
+      usageFile.reload()
+    }
+  }
+
+  FileView {
+    id: settingsFile
+    path: root.stateDir + "/settings.json"
+    printErrors: false
+    onLoaded: {
+      try {
+        var s = JSON.parse(text())
+        if (typeof s.model === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(s.model)) root.model = s.model
+        if (s.lang === "ru" || s.lang === "en" || s.lang === "") root.lang = s.lang
+      } catch (e) {
+      }
+    }
+  }
+
+  FileView {
+    id: usageFile
+    path: root.stateDir + "/usage.json"
+    printErrors: false
+    onLoaded: {
+      try {
+        var u = JSON.parse(text())
+        if (u && typeof u === "object" && !Array.isArray(u)) root.usage = u
+      } catch (e) {
+      }
+    }
+  }
+
+  // MARK: Omarchy sources
+
+  FileView {
+    id: defaultMenuFile
+    path: root.omarchyPath + "/default/omarchy/omarchy-menu.jsonc"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.loadMenu()
+    onFileChanged: reload()
+  }
+
+  FileView {
+    id: userMenuFile
+    path: root.home + "/.config/omarchy/extensions/omarchy-menu.jsonc"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.loadMenu()
+    onFileChanged: reload()
+    onLoadFailed: root.loadMenu()
+  }
+
+  FileView {
+    path: root.omarchyPath + "/default/omarchy/launcher.hides"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.configuredHiddenIds = Search.parseHiddenIds(text())
+    onFileChanged: reload()
+  }
+
+  FileView {
+    path: root.home + "/.local/state/omarchy/agents/usage/claude.json"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.limits = Search.claudeUsage(text())
+    onFileChanged: reload()
+  }
+
+  Process {
+    id: hiddenProc
+    command: ["bash", "-c", 's="$1/shell/services/hidden-entries.sh"; [ -x "$s" ] && exec "$s" "$2"', "bash", root.omarchyPath,
+      [Quickshell.env("XDG_CURRENT_DESKTOP"), Quickshell.env("XDG_SESSION_DESKTOP"), Quickshell.env("DESKTOP_SESSION")]
+        .filter(function(v) { return String(v || "").length > 0 }).join(":")]
+    stdout: StdioCollector {
+      id: hiddenOut
+      onStreamFinished: root.hiddenIds = Search.parseHiddenIds(hiddenOut.text)
+    }
+  }
+
+  Process {
+    id: guardProc
+    property var forMenu: null
+    stdout: StdioCollector {
+      id: guardOut
+      onStreamFinished: if (guardProc.forMenu === root.menu) root.menuHidden = Search.parseGuardOutput(root.menu, guardOut.text)
+    }
+  }
+
+  Process {
+    id: bindingsProc
+    command: ["bash", "-lc", "omarchy-menu-keybindings --print 2>/dev/null"]
+    stdout: StdioCollector {
+      id: bindingsOut
+      onStreamFinished: root.bindings = Search.parseKeybindings(bindingsOut.text)
+    }
+  }
+
+  Process {
+    id: clientsProc
+    command: ["hyprctl", "clients", "-j"]
+    stdout: StdioCollector {
+      id: clientsOut
+      onStreamFinished: {
+        try { root.clients = JSON.parse(clientsOut.text) } catch (e) { root.clients = [] }
+        if (root.opened && !root.hasAnswer && root.query.trim()) root.rebuildRows()
+      }
+    }
+  }
 
   // MARK: processes
 
@@ -453,7 +770,7 @@ Item {
         anchors.leftMargin: card.contentLeftInset
         spacing: Style.spacing.md
 
-        // The input row: ghost, text, model.
+        // The input row: mark, text, model and Claude's session limit.
         Item {
           width: parent.width
           height: root.inputHeight
@@ -512,11 +829,23 @@ Item {
             id: modelLabel
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
+            textFormat: Text.PlainText
             text: root.model.charAt(0).toUpperCase() + root.model.slice(1)
-            color: root.foreground
-            opacity: 0.45
+              + (root.limits && root.limits.session ? " · " + root.tr("limitShort") + root.limits.session.percent + "%" : "")
+            color: modelMouse.containsMouse ? root.accent : root.foreground
+            opacity: modelMouse.containsMouse ? 1 : 0.45
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
+
+            MouseArea {
+              id: modelMouse
+              anchors.fill: parent
+              anchors.margins: -Style.spacing.md
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: { root.cycleModel(); input.forceActiveFocus() }
+              onContainsMouseChanged: root.notice = containsMouse ? root.tr("modelHint") : ""
+            }
           }
         }
 
@@ -535,6 +864,7 @@ Item {
             required property int index
             required property var modelData
             readonly property bool selected: index === root.selectedIndex
+            readonly property string kind: modelData.kind
 
             width: ListView.view.width
             height: root.rowHeight
@@ -549,21 +879,23 @@ Item {
               anchors.leftMargin: Style.spacing.md
 
               Image {
+                id: appIcon
                 anchors.centerIn: parent
-                visible: rowItem.modelData.kind === "app"
+                visible: (rowItem.kind === "app" || rowItem.kind === "window") && status === Image.Ready
                 width: Style.font.display
                 height: width
                 sourceSize.width: width * 2
                 sourceSize.height: height * 2
                 asynchronous: true
-                source: rowItem.modelData.kind !== "app" ? ""
-                  : rowItem.modelData.icon.charAt(0) === "/" ? Util.fileUrl(rowItem.modelData.icon)
-                  : Quickshell.iconPath(rowItem.modelData.icon || "application-x-executable", "application-x-executable")
+                source: rowItem.kind === "app"
+                  ? (rowItem.modelData.icon.charAt(0) === "/" ? Util.fileUrl(rowItem.modelData.icon)
+                     : Quickshell.iconPath(rowItem.modelData.icon || "application-x-executable", "application-x-executable"))
+                  : rowItem.kind === "window" ? Quickshell.iconPath(rowItem.modelData.icon, true) : ""
               }
 
               YinYang {
                 anchors.centerIn: parent
-                visible: rowItem.modelData.kind === "ask"
+                visible: rowItem.kind === "ask"
                 width: 24
                 height: 24
                 color: root.accent
@@ -571,8 +903,14 @@ Item {
 
               Text {
                 anchors.centerIn: parent
-                visible: rowItem.modelData.kind === "file"
-                text: rowItem.modelData.dir ? "󰉋" : "󰈔"
+                visible: !appIcon.visible && rowItem.kind !== "ask"
+                textFormat: Text.PlainText
+                text: rowItem.kind === "file" ? (rowItem.modelData.dir ? "󰉋" : "󰈔")
+                  : rowItem.kind === "calc" ? "󰃬"
+                  : rowItem.kind === "window" ? "󰖯"
+                  : rowItem.kind === "binding" ? "󰌌"
+                  : rowItem.kind === "action" ? (rowItem.modelData.glyph || "󱓞")
+                  : "󰣆"
                 color: root.foreground
                 opacity: 0.75
                 font.family: root.fontFamily
@@ -604,7 +942,7 @@ Item {
                 opacity: 0.55
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
-                elide: rowItem.modelData.kind === "file" ? Text.ElideMiddle : Text.ElideRight
+                elide: rowItem.kind === "file" ? Text.ElideMiddle : Text.ElideRight
               }
             }
 
@@ -614,7 +952,10 @@ Item {
               anchors.rightMargin: Style.spacing.lg
               anchors.verticalCenter: parent.verticalCenter
               visible: rowItem.selected
-              text: root.tr(rowItem.modelData.kind === "ask" ? "hintAsk" : "hintOpen")
+              textFormat: Text.PlainText
+              text: root.tr(rowItem.kind === "ask" ? "hintAsk" : rowItem.kind === "calc" ? "hintCopy"
+                : rowItem.kind === "window" ? "hintSwitch"
+                : rowItem.kind === "action" || rowItem.kind === "binding" ? "hintRun" : "hintOpen")
               color: root.foreground
               opacity: 0.45
               font.family: root.fontFamily
@@ -687,9 +1028,8 @@ Item {
                   width: parent.width
                   visible: !!answer
                   textFormat: Text.MarkdownText
-                  text: Search.safeMarkdown(answer)
+                  text: Search.colorLinks(Search.safeMarkdown(answer), root.accentHex)
                   color: root.foreground
-                  linkColor: root.accent
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.subtitle
                   wrapMode: Text.Wrap
@@ -726,7 +1066,7 @@ Item {
         Text {
           id: footer
           width: parent.width
-          visible: root.query.trim().length > 0 || root.hasAnswer
+          visible: root.query.trim().length > 0 || root.hasAnswer || !!root.notice
           textFormat: Text.PlainText
           text: root.hoveredLink ? (Search.isWebLink(root.hoveredLink) ? root.hoveredLink : root.tr("linkBlocked") + root.hoveredLink)
             : root.notice ? root.notice

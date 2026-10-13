@@ -60,8 +60,65 @@ assert.strictEqual(S.safeMarkdown("a ![leak](https://evil/?d=x) b"), "a leak b")
 assert.strictEqual(S.safeMarkdown("![x][r]\n[r]: https://evil/p.png"), "x\n")
 assert.strictEqual(S.safeMarkdown('hi <img src="https://evil/x"> **b**'), "hi  **b**")
 assert.strictEqual(S.safeMarkdown("[link](https://ok.org) `code`"), "[link](https://ok.org) `code`")
+assert.strictEqual(S.safeMarkdown("see <https://wiki.hypr.land/x>"), "see [https://wiki.hypr.land/x](https://wiki.hypr.land/x)")
+assert.strictEqual(S.colorLinks("[wiki](https://a.b) x", "#7aa2f7"), "[<font color='#7aa2f7'>wiki</font>](https://a.b) x")
+assert.strictEqual(S.colorLinks("[wiki](https://a.b)", "red'><img src=x>"), "[wiki](https://a.b)")
 assert.strictEqual(S.isWebLink("https://wiki.archlinux.org/x"), true)
 assert.strictEqual(S.isWebLink("file:///etc/passwd"), false)
 assert.strictEqual(S.isWebLink("foo.desktop"), false)
 assert.strictEqual(S.isWebLink("steam://run/1"), false)
 console.log("ok")
+
+// MARK: integration with Omarchy data (skipped where the files are missing)
+const fs = require("fs")
+const OM = process.env.OMARCHY_PATH || "/usr/share/omarchy"
+
+assert.deepStrictEqual(S.searchApps(apps, "browser", { tor: true }).map(a => a.id), ["chromium", "firefox"])
+const usage = S.recordUse(S.recordUse({}, "app:firefox", 1e12), "app:firefox", 1e12)
+assert.deepStrictEqual(S.searchApps(apps, "browser", {}, usage, 1e12).map(a => a.id), ["tor", "firefox", "chromium"])
+assert.deepStrictEqual(S.parseHiddenIds("btop\nfoo.desktop\n\n# c\n"), { btop: true, foo: true })
+assert.ok(S.frecency(usage, "app:firefox", 1e12) > S.frecency(usage, "app:firefox", 1e12 + 30 * 86400000))
+
+const menu = S.parseMenu(
+  '{\n // c\n "style": {"label":"Style"},\n "style.theme": {"icon":"x","label":"Theme","action":"omarchy-theme"},\n "style.font": {"label":"Font","when":"false"},\n "style.font.mono": {"label":"Mono","action":"f"},\n "go": {"label":"Go","target":"style"}, }',
+  '{ "style.theme": {"label":"Theme picker"}, "mine": {"label":"Mine","action":"m"} }')
+assert.strictEqual(menu.items["style.theme"].label, "Theme picker")
+assert.strictEqual(menu.items["style.theme"].action, "omarchy-theme")
+assert.deepStrictEqual(S.menuPath(menu.items, "style.font.mono"), ["Style", "Font"])
+const guard = S.menuGuardScript(menu)
+assert.ok(guard.includes("if { false; }") && !guard.includes("style.font"))
+const hiddenMenu = S.parseGuardOutput(menu, "2:0\n")
+assert.deepStrictEqual(hiddenMenu, { "style.font": true })
+assert.deepStrictEqual(S.searchMenu(menu, hiddenMenu, "mono").length, 0)
+const th = S.searchMenu(menu, {}, "theme")
+assert.strictEqual(th[0].action, "omarchy-theme")
+assert.deepStrictEqual(th[0].path, ["Style"])
+assert.strictEqual(S.searchMenu(menu, {}, "style")[0].route, "style")
+
+if (fs.existsSync(OM + "/default/omarchy/omarchy-menu.jsonc")) {
+  const real = S.parseMenu(fs.readFileSync(OM + "/default/omarchy/omarchy-menu.jsonc", "utf8"), "")
+  assert.ok(real.order.length > 100, "menu parsed: " + real.order.length)
+  assert.ok(S.searchMenu(real, {}, "theme").length > 0)
+}
+
+const kb = S.parseKeybindings("SUPER + K                           → Keybindings\nSUPER SHIFT + F    → File manager\nbad line\n")
+assert.deepStrictEqual(kb.map(b => b.keys), ["SUPER + K", "SUPER SHIFT + F"])
+assert.strictEqual(S.searchBindings(kb, "file")[0].desc, "File manager")
+
+const clients = [
+  { address: "0x1", title: "Inbox — Chromium", class: "chromium", focusHistoryID: 2 },
+  { address: "0x2", title: "~/Work", class: "Alacritty", focusHistoryID: 0 },
+  { address: "bad", title: "chromium evil", class: "x" },
+]
+assert.deepStrictEqual(S.searchWindows(clients, "chrom").map(c => c.address), ["0x1"])
+
+for (const [expr, want] of [["2*(3+4)", 14], ["2^10", 1024], ["1,5 + 2", 3.5], ["-3+1", -2], ["10/4", 2.5], ["7 % 3", 1]])
+  assert.strictEqual(S.calculate(expr), want, expr)
+for (const expr of ["42", "abc", "2+", "1/0", "(1", "ls; whoami", "-5"])
+  assert.strictEqual(S.calculate(expr), null, expr)
+
+const u = S.claudeUsage('{"limits":[{"label":"Session (5-hour)","percent":0.34,"resetsAt":"2026-10-13T18:40:00+00:00"},{"label":"Weekly (7-day)","percent":0.4}]}')
+assert.strictEqual(u.session.percent, 34)
+assert.strictEqual(u.week.percent, 40)
+assert.strictEqual(S.claudeUsage("{}"), null)
+console.log("ok integration")

@@ -2,14 +2,33 @@
   "schemaVersion": 1,
   "id": "io.github.kostya9406.omalight",
   "name": "OmaLight",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Kostya9406",
   "license": "MIT",
-  "description": "Spotlight-style bar: find apps and files, or ask Claude and read the answer streamed right in the bar. Uses your Claude Code subscription, no API key.",
+  "description": "Spotlight-style bar for Omarchy: apps, open windows, Omarchy actions, keybindings, files and sums in one input, or ask Claude and read the answer streamed in place. Uses your Claude Code subscription, no API key.",
   "kinds": [
-    "overlay"
+    "overlay",
+    "bar-widget"
   ],
+  "keepLoaded": true,
   "entryPoints": {
-    "overlay": "OmaLight.qml"
+    "overlay": "OmaLight.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "OmaLight",
+    "description": "The OmaLight mark; click to open the bar. The tooltip shows Claude's session and weekly limits.",
+    "category": "AI",
+    "allowMultiple": false,
+    "defaultSection": "left",
+    "schema": [
+      {
+        "key": "showLimit",
+        "type": "boolean",
+        "label": "Show Claude's session limit next to the mark",
+        "description": "Display the 5-hour limit used (e.g. 34%) beside the mark. Off shows just the mark; the tooltip always has both limits.",
+        "defaultValue": false
+      }
+    ]
   }
 }

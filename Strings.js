@@ -22,7 +22,19 @@ var TEXT = {
   errAuth:      ["Claude isn't signed in. Run claude in a terminal and log in.",
                  "Claude не авторизован. Запусти claude в терминале и войди."],
   errLimit:     ["Claude usage limit reached: ", "Лимит подписки Claude исчерпан: "],
-  errMissing:   ["The claude CLI wasn't found in PATH.", "Не найден claude CLI в PATH."]
+  errMissing:   ["The claude CLI wasn't found in PATH.", "Не найден claude CLI в PATH."],
+  hintCopy:     ["↵ copy", "↵ копировать"],
+  hintSwitch:   ["↵ switch", "↵ перейти"],
+  hintRun:      ["↵ run", "↵ выполнить"],
+  calcSub:      ["Calculator · ↵ copies the result", "Калькулятор · ↵ копирует результат"],
+  window:       ["Open window", "Открытое окно"],
+  binding:      ["Keybinding", "Сочетание клавиш"],
+  workspace:    ["workspace ", "рабочий стол "],
+  launching:    ["Launching ", "Запуск "],
+  limitShort:   ["5h ", "5ч "],
+  modelHint:    ["Ctrl+M or click: switch model", "Ctrl+M или клик: сменить модель"],
+  widgetTip:    ["OmaLight · Alt+Space", "OmaLight · Alt+Space"],
+  limitsTip:    ["Claude limits: session %1% · week %2%", "Лимиты Claude: сессия %1% · неделя %2%"]
 }
 
 function isRussian(localeName) {
