@@ -109,4 +109,4 @@ Modelled on [Lumi](https://github.com/AlbertS15/Lumi) by AlbertS15 (MIT). The qu
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Adapted third-party parts and their notices are listed in [NOTICE](NOTICE).

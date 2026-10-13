@@ -19,9 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-OmaLight is modelled on Lumi (https://github.com/AlbertS15/Lumi), MIT License,
-Copyright (c) 2026 AlbertS15. The question-word list and the way the bar tells
-a search from a question are adapted from it.
