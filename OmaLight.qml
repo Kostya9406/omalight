@@ -280,9 +280,15 @@ Item {
 
   // A file or app named exactly what was typed wins, even when the text reads
   // like a question ("my notes for monday.txt"); otherwise a search lands on
-  // the first result and a question stays on the ask row.
+  // the first result and a question stays on the ask row. A file named exactly
+  // so still gives way to apps and keybindings found for the same text: "float"
+  // lands on the floating keybinding, not on some float.h.
   function defaultRow(q) {
     var exact = root.exactMatchRow(q)
+    if (exact > 0 && root.rows[exact].kind === "file") {
+      for (var i = 1; i < exact; i++)
+        if (root.rows[i].kind === "app" || root.rows[i].kind === "binding") return i
+    }
     if (exact > 0) return exact
     return Search.looksLikeQuestion(q) || root.rows.length < 2 ? 0 : 1
   }
