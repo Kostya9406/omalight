@@ -13,7 +13,9 @@ BarWidget {
   moduleName: "io.github.kostya9406.omalight"
 
   property var limits: null
-  readonly property bool ru: Strings.isRussian(Qt.locale().name)
+  // The language the bar itself uses: settings.json when it names one, else the system locale.
+  property string lang: ""
+  readonly property bool ru: root.lang ? root.lang === "ru" : Strings.isRussian(Qt.locale().name)
   readonly property bool showLimit: root.setting("showLimit", false) && !!(root.limits && root.limits.session)
 
   implicitWidth: button.implicitWidth
@@ -45,6 +47,22 @@ BarWidget {
       height: 16
       color: button.foreground
     }
+  }
+
+  FileView {
+    path: Quickshell.env("HOME") + "/.local/state/omalight/settings.json"
+    watchChanges: true
+    printErrors: false
+    onLoaded: {
+      try {
+        var s = JSON.parse(text())
+        root.lang = s.lang === "ru" || s.lang === "en" ? s.lang : ""
+      } catch (e) {
+        root.lang = ""
+      }
+    }
+    onFileChanged: reload()
+    onLoadFailed: root.lang = ""
   }
 
   FileView {
