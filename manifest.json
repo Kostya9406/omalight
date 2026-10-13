@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.kostya9406.omalight",
+  "name": "OmaLight",
+  "version": "1.0.0",
+  "author": "Kostya9406",
+  "license": "MIT",
+  "description": "Spotlight-style bar: find apps and files, or ask Claude and read the answer streamed right in the bar. Uses your Claude Code subscription, no API key.",
+  "kinds": [
+    "overlay"
+  ],
+  "entryPoints": {
+    "overlay": "OmaLight.qml"
+  }
+}
