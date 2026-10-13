@@ -58,15 +58,16 @@ function searchApps(entries, query, hidden, usage, now) {
   for (var i = 0; i < entries.length; i++) {
     var e = entries[i]
     if (!e || e.noDisplay) continue
+    // Compared as is, like the Omarchy app library: only the hide lists drop ".desktop".
     var id = String(e.id || "")
-    if (id.slice(-8) === ".desktop") id = id.slice(0, -8)
     if (hidden && hidden[id]) continue
     var score = appScore(e, query)
     if (score < 0) continue
     var key = id || String(e.name)
     if (seen[key]) continue
     seen[key] = true
-    scored.push({ score: score, entry: e, used: frecency(usage, "app:" + id, now) })
+    // The raw id, as OmaLight.qml records launches ("org.telegram.desktop" keeps its suffix).
+    scored.push({ score: score, entry: e, used: frecency(usage, "app:" + String(e.id || ""), now) })
   }
   scored.sort(function(a, b) {
     if (a.score !== b.score) return a.score - b.score
@@ -332,6 +333,48 @@ function menuPath(items, id) {
   return parts
 }
 
+// Package and command checks are most of what `when:` asks, and asked one
+// pacman call at a time they take seconds. As the Omarchy menu does, the batch
+// answers them in-process: one `pacman -Qq`/`-Qi` read (provides included),
+// and shadow functions for omarchy-pkg-present/-missing and
+// omarchy-cmd-present/-missing that agree with the real commands. A version
+// constraint (`bash>=1`) still goes to pacman. The readers below run once and
+// their output stands in for `$(reader)` in the guards.
+// Adapted from Omarchy's shell/plugins/menu/MenuModel.js (MIT).
+var GUARD_READERS = [
+  "omarchy-channel-current",
+  "omarchy-default-agent",
+  "omarchy-default-browser",
+  "omarchy-default-editor",
+  "omarchy-default-terminal",
+  "omarchy-dns"
+]
+
+function guardHelpers() {
+  return 'declare -A __omarchy_pkgs=()\n'
+    + 'mapfile -t __omarchy_pkg_names < <({ pacman -Qq; LC_ALL=C pacman -Qi'
+    + " | awk '/^[A-Za-z]/ { provides = ($0 ~ /^Provides/); sub(/^[^:]*: /, \"\") }"
+    + ' provides && $0 != "None" { n = split($0, p, " ");'
+    + ' for (i = 1; i <= n; i++) { sub(/[<>=].*/, "", p[i]); print p[i] } }\'; } 2>/dev/null)\n'
+    + 'for __omarchy_pkg in "${__omarchy_pkg_names[@]}"; do __omarchy_pkgs[$__omarchy_pkg]=1; done\n'
+    + '__omarchy_pkg_has() { [[ -n ${__omarchy_pkgs[$1]-} ]] && return 0; '
+    + '[[ $1 == *[\\<\\>=]* ]] && { pacman -Q "$1" &>/dev/null; return; }; return 1; }\n'
+    + 'omarchy-pkg-present() { local p; for p in "$@"; do __omarchy_pkg_has "$p" || return 1; done; return 0; }\n'
+    + 'omarchy-pkg-missing() { local p; for p in "$@"; do __omarchy_pkg_has "$p" || return 0; done; return 1; }\n'
+    + 'omarchy-cmd-present() { local c; for c in "$@"; do command -v "$c" &>/dev/null || return 1; done; return 0; }\n'
+    + 'omarchy-cmd-missing() { local c; for c in "$@"; do command -v "$c" &>/dev/null || return 0; done; return 1; }\n'
+}
+
+function guardReaderSlot(index) {
+  return "${__omarchy_read_" + index + "}"
+}
+
+function substituteGuardReaders(expression) {
+  for (var i = 0; i < GUARD_READERS.length; i++)
+    expression = expression.split("$(" + GUARD_READERS[i] + ")").join(guardReaderSlot(i))
+  return expression
+}
+
 // One bash script answering every `when:` as "<index>:<0|1>" lines. Ids are
 // never put in the script, only their index, so an id cannot break out of it.
 function menuGuardScript(menu) {
@@ -339,9 +382,17 @@ function menuGuardScript(menu) {
   for (var i = 0; i < menu.order.length; i++) {
     var e = menu.items[menu.order[i]]
     if (e && typeof e.when === "string" && e.when)
-      lines.push("if { " + e.when + "; } >/dev/null 2>&1 </dev/null; then echo " + i + ":1; else echo " + i + ":0; fi")
+      lines.push("if { " + substituteGuardReaders(e.when) + "; } >/dev/null 2>&1 </dev/null; then echo " + i + ":1; else echo " + i + ":0; fi")
   }
-  return lines.join("\n")
+  if (lines.length === 0) return ""
+  var body = lines.join("\n")
+  var prelude = guardHelpers()
+  for (var r = 0; r < GUARD_READERS.length; r++) {
+    // `|| :` so a reader that exits nonzero cannot stop the batch.
+    if (body.indexOf(guardReaderSlot(r)) >= 0)
+      prelude += "__omarchy_read_" + r + "=$(" + GUARD_READERS[r] + " 2>/dev/null) || :\n"
+  }
+  return prelude + body
 }
 
 function parseGuardOutput(menu, text) {

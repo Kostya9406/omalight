@@ -36,6 +36,8 @@ var TEXT = {
   widgetTip:    ["OmaLight · Alt+Space", "OmaLight · Alt+Space"],
   limitSession: ["Claude session (5h): ", "Сессия Claude (5ч): "],
   limitWeek:    ["Claude week: ", "Неделя Claude: "],
+  searchingFiles: ["Searching files…", "Ищу файлы…"],
+  filesTimeout: ["File search didn't answer; nothing was sent.", "Поиск файлов не ответил, ничего не отправлено."],
   noOpener:     ["No app can open this file; showing its folder.", "Нет приложения для этого файла, открываю папку с ним."]
 }
 

@@ -64,6 +64,9 @@ Item {
   property var rows: []
   property int selectedIndex: 0
   property bool userMoved: false
+  // An Enter that waits for the file search: the query, and whether Alt was held.
+  property string pendingEnter: ""
+  property bool pendingReveal: false
 
   // Answer mode: the conversation so far, newest last.
   property var turns: []
@@ -124,6 +127,7 @@ Item {
     root.stopAnswer()
     fileDebounce.stop()
     root.hoveredLink = ""
+    root.pendingEnter = ""
   }
 
   function dismiss() {
@@ -178,6 +182,7 @@ Item {
     if (input.text !== text) input.text = text
     if (root.hasAnswer) return
     root.userMoved = false
+    if (root.pendingEnter) { root.pendingEnter = ""; root.notice = "" }
     root.rebuildRows()
     var q = text.trim()
     root.selectedIndex = Search.looksLikeQuestion(q) || root.rows.length < 2 ? 0 : 1
@@ -262,9 +267,52 @@ Item {
     root.filesQuery = q
     if (root.hasAnswer || q !== root.query.trim()) return
     root.rebuildRows()
-    // A search lands on the first result; a question stays on the ask row.
-    if (!root.userMoved && !Search.looksLikeQuestion(q) && root.selectedIndex === 0 && root.rows.length > 1)
-      root.selectedIndex = 1
+    if (!root.userMoved) {
+      // A file or app named exactly what was typed wins, even when the text reads
+      // like a question ("my notes for monday.txt"); otherwise a search lands on
+      // the first result and a question stays on the ask row.
+      var exact = root.exactMatchRow(q)
+      if (exact > 0) root.selectedIndex = exact
+      else if (!Search.looksLikeQuestion(q) && root.selectedIndex === 0 && root.rows.length > 1) root.selectedIndex = 1
+    }
+    if (root.pendingEnter === q) {
+      root.pendingEnter = ""
+      root.notice = ""
+      root.activate(root.selectedIndex, root.pendingReveal)
+    }
+  }
+
+  function onFilesFailed(q) {
+    if (root.pendingEnter !== q) return
+    root.pendingEnter = ""
+    root.notice = root.tr("filesTimeout")
+    noticeTimer.restart()
+  }
+
+  function exactMatchRow(q) {
+    var want = q.toLowerCase()
+    for (var i = 1; i < root.rows.length; i++) {
+      var r = root.rows[i]
+      if (r.kind !== "file" && r.kind !== "app") continue
+      var t = String(r.title).toLowerCase()
+      if (t === want || t.replace(/\.[^.]+$/, "") === want) return i
+    }
+    return -1
+  }
+
+  // Plain Enter on the ask row nobody picked waits for the file search of this
+  // query (usually well under a second), so typing a file name and pressing
+  // Enter quickly opens the file instead of sending its name to Claude.
+  function enter(reveal) {
+    var q = root.query.trim()
+    var row = root.rows[root.selectedIndex]
+    if (row && row.kind === "ask" && !root.userMoved && q.length >= 2 && root.filesQuery !== q) {
+      root.pendingEnter = q
+      root.pendingReveal = reveal
+      root.notice = root.tr("searchingFiles")
+      return
+    }
+    root.activate(root.selectedIndex, reveal)
   }
 
   function startFileSearch() {
@@ -273,8 +321,10 @@ Item {
     if (fileProc.running) return // onExited picks the newest query up
     fileProc.searched = q
     // files.sh: plocate's index plus fd for what changed since it was built.
-    fileProc.command = ["bash", root.filesScript, q]
+    // timeout kills the whole process group (bash, fd, plocate) of a search that hangs.
+    fileProc.command = ["timeout", "-k", "1", "4", "bash", root.filesScript, q]
     fileProc.running = true
+    fileWatchdog.restart()
   }
 
   function runMenuGuards() {
@@ -572,7 +622,7 @@ Item {
       return false
     }
     if (enter && ctrl) { root.ask(root.query); return true }
-    if (enter) { root.activate(root.selectedIndex, alt); return true }
+    if (enter) { root.enter(alt); return true }
     if (event.key === Qt.Key_Down || (ctrl && event.key === Qt.Key_J)) { root.move(1); return true }
     if (event.key === Qt.Key_Up || (ctrl && event.key === Qt.Key_K)) { root.move(-1); return true }
     if (event.key === Qt.Key_Tab) { root.move(1); return true }
@@ -750,12 +800,32 @@ Item {
         var out = fileOut.text
         var nl = out.indexOf("\n")
         if (out.indexOf("q\t") !== 0 || nl < 0) return
+        // Without the closing "end" the search was cut short: never act on it.
+        if (!/(^|\n)end\n?$/.test(out)) { root.onFilesFailed(out.slice(2, nl)); return }
         root.onFilesArrived(out.slice(2, nl), out.slice(nl + 1))
       }
     }
-    onExited: Qt.callLater(function() {
-      if (root.query.trim() !== fileProc.searched) root.startFileSearch()
-    })
+    onExited: {
+      fileWatchdog.stop()
+      Qt.callLater(function() {
+        if (root.query.trim() !== fileProc.searched) root.startFileSearch()
+      })
+    }
+  }
+
+  // A search that hangs (a stuck disk) is stopped, so the next one can run; an
+  // Enter that was waiting on it is dropped rather than sent to Claude.
+  Timer {
+    id: fileWatchdog
+    interval: 6000
+    onTriggered: {
+      fileProc.running = false
+      if (root.pendingEnter) {
+        root.pendingEnter = ""
+        root.notice = root.tr("filesTimeout")
+        noticeTimer.restart()
+      }
+    }
   }
 
   Process {

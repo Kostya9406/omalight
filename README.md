@@ -75,7 +75,8 @@ o.bind("ALT + SPACE", "OmaLight", "omarchy-shell shell toggle io.github.kostya94
 
 - Search stays local. Only text you send to Claude leaves the machine, to Anthropic through your own `claude` CLI, along with Omarchy's public agent guide from `$OMARCHY_PATH/default/agents/skills/omarchy`.
 - Claude runs as `claude --safe-mode -p`, which loads none of your CLAUDE.md files, hooks, plugins or MCP servers. The only tools allowed are **WebSearch** and **WebFetch**: it cannot read your files or run commands.
-- Everything OmaLight keeps is in `~/.local/state/omalight`: Claude's sessions (so follow-ups can `--resume` them), `settings.json` (model and language), `usage.json` (how often you launch what) and `picker/`, a two-line stand-in for `omarchy-menu-select` that lets a keybinding row run through `omarchy-menu-keybindings`.
+- OmaLight's own files are in `~/.local/state/omalight`: `settings.json` (model and language), `usage.json` (how often you launch what) and `picker/`, a two-line stand-in for `omarchy-menu-select` that lets a keybinding row run through `omarchy-menu-keybindings`. Claude runs from that folder, so its conversations are not mixed into your projects.
+- The conversations themselves are stored by Claude Code, like any `claude` session, in `~/.claude/projects/-home-<you>--local-state-omalight/` (one `.jsonl` file per conversation, questions and answers included, kept until you delete them). That is what lets a follow-up `--resume` the conversation.
 - Omarchy menu actions run exactly as the Omarchy menu runs them: they are commands from Omarchy and from your own menu extension.
 - Answers are untrusted text. Images and raw HTML are stripped before rendering, so nothing is fetched without a click, and only `http(s)` links open.
 - Typed text and file paths reach programs only as separate arguments, never through a shell.
@@ -84,8 +85,11 @@ o.bind("ALT + SPACE", "OmaLight", "omarchy-shell shell toggle io.github.kostya94
 
 ```bash
 omarchy plugin remove io.github.kostya9406.omalight
-rm -rf ~/.local/state/omalight
+rm -rf ~/.local/state/omalight                     # settings, launch counts
+rm -rf ~/.claude/projects/*--local-state-omalight  # Claude's OmaLight conversations
 ```
+
+With `CLAUDE_CONFIG_DIR` set, the conversations are under that folder's `projects/` instead.
 
 Remove the `OmaLight` line from `~/.config/hypr/bindings.lua`.
 
@@ -94,7 +98,7 @@ Remove the `OmaLight` line from `~/.config/hypr/bindings.lua`.
 - `files.sh`: the file search (plocate, plus fd since the last index refresh); try it with `bash files.sh <name>`.
 - `open.sh`: opens a result in its default app through `gio`, so apps that run in a terminal (nvim for text files) open in your terminal; with no app for the type it shows the file's folder.
 - `OmaLight.qml`: the overlay. `BarWidget.qml`: the bar mark. `Search.js`: matching, ranking, the calculator, the Omarchy menu and keybinding readers, and stream parsing. `Strings.js`: interface text. `Icon.js` and `YinYang.qml`: the mark.
-- `node tests/search.test.js` runs the logic tests.
+- `node tests/search.test.js` runs the logic tests; `bash tests/files.test.sh` checks `files.sh` against a stand-in plocate.
 - `node tools/make-icon.js [color] > icon.svg` redraws the icon from the same grid the overlay paints.
 - `omarchy-shell` caches compiled QML, so run `omarchy restart shell` after editing.
 
