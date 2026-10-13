@@ -155,8 +155,8 @@ function parseStreamLine(line) {
 
 // Applies `fn` to the Markdown outside code: fenced blocks (closed or still
 // streaming) and inline code spans pass through untouched. This guess at what
-// is code can differ from Qt's own Markdown parser, so it is only used for
-// cosmetic changes (autolinks, link colour), never for safety.
+// is code can differ from Qt's own Markdown parser, so it is only used for a
+// cosmetic change (autolinks), never for safety.
 function outsideCode(text, fn) {
   var parts = String(text || "").split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/)
   for (var i = 0; i < parts.length; i += 2) parts[i] = fn(parts[i])
@@ -171,31 +171,20 @@ var WJ = "\u2060"
 // out in its URL without a click, and raw HTML could do the same with <img>.
 // So, everywhere in the text, code included, since nothing here can tell code
 // apart exactly as Qt does: "![" never stays together (any image form, nested,
-// reference or shortcut, becomes "!" before an ordinary link), and "<" never
-// starts a tag, comment or declaration. The word joiner put between them is
-// invisible, so code and placeholders such as <name> read as before; copying
-// an answer takes the original text, not this.
+// reference or shortcut, becomes "!" before an ordinary link), and every "<"
+// is followed by the word joiner, so no tag, comment or declaration can start,
+// not even one Qt would assemble after stripping emphasis or decoding entities
+// ("<*img", "<&#105;mg"). The text is never given any HTML of OmaLight's own
+// either: Qt only parses raw HTML once some tag opens it, and none can.
+// The word joiner is invisible, so code and placeholders such as <name> read
+// as before; copying an answer takes the original text, not this.
 function safeMarkdown(text) {
   return outsideCode(text, function(md) {
     // Autolinks look like tags; keep them as ordinary links first.
     return md.replace(/<(https?:\/\/[^\s<>]+)>/gi, "[$1]($1)")
   })
     .replace(/!\[/g, "!" + WJ + "[")
-    .replace(/<(?=[A-Za-z\/!?])/g, "<" + WJ)
-}
-
-// Qt's Markdown renderer ignores linkColor, but honours <font> inside link
-// text. Run after safeMarkdown, so these are the only tags in the text; a
-// wrong guess at code here only shows the colour tag as text.
-function colorLinks(markdown, color) {
-  var c = String(color || "")
-  if (!/^#[0-9a-fA-F]{6}$/.test(c)) return String(markdown || "")
-  return outsideCode(markdown, function(md) {
-    // The link text loses any "<" or ">", so nothing it holds can complete a tag around <font>.
-    return md.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, function(all, label, url) {
-      return "[<font color='" + c + "'>" + label.replace(/[<>]/g, "") + "</font>](" + url + ")"
-    })
-  })
+    .replace(/</g, "<" + WJ)
 }
 
 // Only plain web links open from an answer; file:, custom schemes and relative
@@ -581,7 +570,7 @@ if (typeof module !== "undefined") module.exports = {
   looksLikeQuestion: looksLikeQuestion, appScore: appScore, searchApps: searchApps,
   filterFiles: filterFiles, baseName: baseName, dirName: dirName, tildify: tildify,
   parseStreamLine: parseStreamLine, explainError: explainError,
-  safeMarkdown: safeMarkdown, isWebLink: isWebLink, colorLinks: colorLinks,
+  safeMarkdown: safeMarkdown, isWebLink: isWebLink,
   textScore: textScore, rowScore: rowScore, parseHiddenIds: parseHiddenIds, frecency: frecency, recordUse: recordUse,
   stripJsonc: stripJsonc, parseMenu: parseMenu, menuPath: menuPath, menuGuardScript: menuGuardScript,
   parseGuardOutput: parseGuardOutput, searchMenu: searchMenu, parseKeybindings: parseKeybindings,

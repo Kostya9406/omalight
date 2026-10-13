@@ -88,9 +88,6 @@ Item {
   property color scrim: Color.menu.scrim
   property color selectedBackground: Color.menu.selectedBackground
   property color accent: Color.menu.selectedText
-  // "#rrggbb" for colouring links inside Markdown, which ignores linkColor.
-  readonly property string accentHex: "#" + [root.accent.r, root.accent.g, root.accent.b]
-    .map(function(v) { var h = Math.round(v * 255).toString(16); return h.length < 2 ? "0" + h : h }).join("")
   readonly property int cornerRadius: Style.cornerRadius
   property string fontFamily: Style.font.menuFamily
   property int contentMargin: Style.spacing.panelPadding
@@ -278,6 +275,15 @@ Item {
     if (root.pendingEnter === q) {
       root.pendingEnter = ""
       root.notice = ""
+      var row = root.rows[root.selectedIndex]
+      // Nothing matched a search-like query: say so rather than send it to Claude
+      // unseen; the next Enter asks, since the ask row now counts as chosen.
+      if (row && row.kind === "ask" && !Search.looksLikeQuestion(q)) {
+        root.userMoved = true
+        root.notice = root.tr("nothingFound")
+        noticeTimer.restart()
+        return
+      }
       root.activate(root.selectedIndex, root.pendingReveal)
     }
   }
@@ -310,6 +316,8 @@ Item {
       root.pendingEnter = q
       root.pendingReveal = reveal
       root.notice = root.tr("searchingFiles")
+      // After a failed search nothing else would search this query again.
+      if (!fileProc.running && !fileDebounce.running) root.startFileSearch()
       return
     }
     root.activate(root.selectedIndex, reveal)
@@ -354,7 +362,7 @@ Item {
   function activate(index, reveal) {
     var row = root.rows[index]
     if (!row) return
-    if (row.kind === "ask") { root.ask(row.subtitle); return }
+    if (row.kind === "ask") { if (!reveal) root.ask(row.subtitle); return }
     if (row.kind === "file") {
       // open.sh rather than xdg-open: it also opens files whose app runs in a terminal (nvim for text).
       root.run(["uwsm-app", "--", "bash", root.openScript, reveal && !row.dir ? Search.dirName(row.path) : row.path, root.tr("noOpener")])
@@ -799,7 +807,7 @@ Item {
       onStreamFinished: {
         var out = fileOut.text
         var nl = out.indexOf("\n")
-        if (out.indexOf("q\t") !== 0 || nl < 0) return
+        if (out.indexOf("q\t") !== 0 || nl < 0) { root.onFilesFailed(fileProc.searched); return }
         // Without the closing "end" the search was cut short: never act on it.
         if (!/(^|\n)end\n?$/.test(out)) { root.onFilesFailed(out.slice(2, nl)); return }
         root.onFilesArrived(out.slice(2, nl), out.slice(nl + 1))
@@ -1143,7 +1151,9 @@ Item {
                   width: parent.width
                   visible: !!answer
                   textFormat: Text.MarkdownText
-                  text: Search.colorLinks(Search.safeMarkdown(answer), root.accentHex)
+                  // No HTML of OmaLight's own goes into the answer (not even to colour links,
+                  // which Markdown leaves at Qt's default): see Search.safeMarkdown.
+                  text: Search.safeMarkdown(answer)
                   color: root.foreground
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.subtitle
