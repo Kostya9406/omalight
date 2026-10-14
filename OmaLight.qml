@@ -616,6 +616,8 @@ Item {
   }
 
   function stopAnswer() {
+    // A question still waiting for the old run to exit never starts.
+    if (askProc.pending) root.updateLastTurn(function(t) { if (!t.a && !t.error) t.error = root.tr("stopped") })
     askProc.pending = null
     if (askProc.running) askProc.running = false
     if (root.answering) root.finishTurn(root.tr("stopped"))
@@ -648,7 +650,9 @@ Item {
     var enter = event.key === Qt.Key_Return || event.key === Qt.Key_Enter
 
     if (event.key === Qt.Key_Escape) {
-      if (root.answering) root.stopAnswer()
+      // A question waiting for the old run to exit counts as answering: Esc stops
+      // it rather than clearing the whole conversation.
+      if (root.answering || askProc.pending) root.stopAnswer()
       else if (root.hasAnswer) { root.resetConversation(); root.setQuery("") }
       else if (root.query) root.setQuery("")
       else root.dismiss()
