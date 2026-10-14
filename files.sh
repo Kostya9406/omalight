@@ -17,7 +17,7 @@
 # read a process's arguments in /proc, but not its environment. For the same
 # reason fd gets no pattern and awk matches its list against the environment.
 # plocate takes its pattern only as an argument, so there the text is visible
-# for the few milliseconds plocate runs.
+# for the fraction of a second plocate runs.
 
 q=${OMALIGHT_QUERY-}
 printf 'q\t%s\n' "$q"
@@ -31,7 +31,7 @@ printf 'q\t%s\n' "$q"
     timeout 2 fd --no-ignore --one-file-system --exclude node_modules --exclude .git \
       "${since[@]}" --search-path "$HOME" 2>/dev/null |
       awk 'BEGIN { q = tolower(ENVIRON["OMALIGHT_QUERY"]) }
-           { n = $0; sub(/\/$/, "", n); sub(/.*\//, "", n); if (index(tolower(n), q)) print }'
+           { n = $0; sub(/\/$/, "", n); sub(/.*\//, "", n); if (index(tolower(n), q)) print }' 2>/dev/null
   fi
   plocate -i -b -- "$q" 2>/dev/null
 } | sed 's:/$::' | grep -F "$HOME/" | grep -v -e '/\.' -e '/node_modules/' | awk '!seen[$0]++' |

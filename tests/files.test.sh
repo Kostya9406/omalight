@@ -38,6 +38,6 @@ if grep -qi report "$tmp/fd.args"; then echo "the typed text reached fd's argume
 grep -q -- '-- REPORT' "$tmp/plocate.args" || { echo "plocate did not get the text" >&2; exit 1; }
 
 # An argument is never taken for the text.
-out=$(HOME="$home" PATH="$tmp/bin:$PATH" bash "$here/files.sh" report)
+out=$(env -u OMALIGHT_QUERY HOME="$home" PATH="$tmp/bin:$PATH" bash "$here/files.sh" report)
 if [[ $out != $'q\t\nend' ]]; then printf 'an argument was searched for:\n%s\n' "$out" >&2; exit 1; fi
 echo "ok files"
