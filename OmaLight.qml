@@ -354,9 +354,11 @@ Item {
     if (q.length < 2 || root.hasAnswer || root.multiline(q)) return
     if (fileProc.running) return // onExited picks the newest query up
     fileProc.searched = q
-    // files.sh: plocate's index plus fd for what changed since it was built.
+    // files.sh: plocate's index plus fd for what changed since it was built. The
+    // text goes in the environment: process arguments are readable by other users.
     // timeout kills the whole process group (bash, fd, plocate) of a search that hangs.
-    fileProc.command = ["timeout", "-k", "1", "4", "bash", root.filesScript, q]
+    fileProc.environment = { OMALIGHT_QUERY: q }
+    fileProc.command = ["timeout", "-k", "1", "4", "bash", root.filesScript]
     fileProc.running = true
     fileWatchdog.restart()
   }
@@ -514,28 +516,31 @@ Item {
                 "--output-format", "stream-json", "--verbose", "--include-partial-messages",
                 "--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch,WebFetch"]
     if (root.sessionId) args.push("--resume", root.sessionId)
-    var command = ["bash", "-lc",
-      // The question goes in on stdin, never through a shell; exec so stopping the run stops claude.
+    var run = { question: q, command: ["bash", "-lc",
+      // The question comes in the environment, which other users cannot read (unlike
+      // arguments), and goes on to claude on stdin, never through a shell; exec so
+      // stopping the run stops claude.
       // Omarchy's own agent guide joins the system prompt, so answers fit this system.
-      'd=$1; q=$2; p=$3; k=$4; shift 4; mkdir -p "$d" && cd "$d" || exit 1; ' +
+      'q=$OMALIGHT_QUESTION; unset OMALIGHT_QUESTION; d=$1; p=$2; k=$3; shift 3; mkdir -p "$d" && cd "$d" || exit 1; ' +
       'for f in SKILL.md hyprland.md theming.md plugins.md; do [ -f "$k/$f" ] && p+=$\'\\n\\n\'"$(cat "$k/$f")"; done; ' +
       'exec claude "$@" --append-system-prompt "$p" <<<"$q"',
-      "bash", root.stateDir, q, root.systemPrompt, root.skillDir].concat(args)
+      "bash", root.stateDir, root.systemPrompt, root.skillDir].concat(args) }
     if (askProc.running) {
-      askProc.pending = command
+      askProc.pending = run
       askProc.running = false
     } else {
-      root.startAsk(command)
+      root.startAsk(run)
     }
   }
 
-  function startAsk(command) {
+  function startAsk(run) {
     root.answering = true
     root.liveAnswer = ""
     root.liveBuffer = ""
     askProc.streamed = false
     askProc.failed = ""
-    askProc.command = command
+    askProc.environment = { OMALIGHT_QUESTION: run.question }
+    askProc.command = run.command
     askProc.running = true
   }
 

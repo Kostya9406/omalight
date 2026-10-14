@@ -80,7 +80,7 @@ o.bind("ALT + SPACE", "OmaLight", "omarchy-shell shell toggle io.github.kostya94
 - The conversations themselves are stored by Claude Code, like any `claude` session, in `~/.claude/projects/-home-<you>--local-state-omalight/` (one `.jsonl` file per conversation, questions and answers included). Claude Code removes old ones itself after `cleanupPeriodDays` (30 days by default), or delete them as below. That is what lets a follow-up `--resume` the conversation.
 - Omarchy menu actions run exactly as the Omarchy menu runs them: they are commands from Omarchy and from your own menu extension.
 - Answers are untrusted text, so before rendering an invisible character (U+2060) goes between `!` and `[` and after every `<`, everywhere, code included: no image or HTML tag can form, and OmaLight adds no HTML of its own, so an answer cannot make the bar fetch anything without a click. Links open only on a click, and only `http(s)` ones (they keep Qt's default colour for that reason). Copying an answer gives the original text.
-- Typed text and file paths reach programs only as separate arguments, never through a shell.
+- Typed text never goes through a shell. Other local users can read any process's arguments in `/proc`, so the text you search for and the questions you ask are handed over in the environment (readable only by you) and on stdin, not as arguments. The one exception is `plocate`, which only takes its pattern as an argument: while it runs, a few milliseconds per search, the search text is visible there. Mounting `/proc` with `hidepid=invisible` hides that too. File paths you open are passed as arguments.
 
 ## Uninstall
 
@@ -96,7 +96,7 @@ Remove the `OmaLight` line from `~/.config/hypr/bindings.lua`.
 
 ## Development
 
-- `files.sh`: the file search (plocate, plus fd since the last index refresh); try it with `bash files.sh <name>`.
+- `files.sh`: the file search (plocate, plus fd since the last index refresh); try it with `OMALIGHT_QUERY=<name> bash files.sh`.
 - `open.sh`: opens a result in its default app through `gio`, so apps that run in a terminal (nvim for text files) open in your terminal; with no app for the type it shows the file's folder.
 - `OmaLight.qml`: the overlay. `BarWidget.qml`: the bar mark. `Search.js`: matching, ranking, the calculator, the Omarchy menu and keybinding readers, and stream parsing. `Strings.js`: interface text. `Icon.js` and `YinYang.qml`: the mark.
 - `node tests/search.test.js` runs the logic tests; `bash tests/files.test.sh` checks `files.sh` against a stand-in plocate.
