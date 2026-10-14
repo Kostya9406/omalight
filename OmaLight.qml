@@ -338,7 +338,7 @@ Item {
         return
       }
       // The search already came back empty: same answer as when Enter waited
-      // for it, so how fast plocate was never decides what reaches Claude.
+      // for it, so how fast the search was never decides what reaches Claude.
       // With results on screen the choice is left to the user.
       if (!Search.looksLikeQuestion(q)) {
         if (root.rows.length < 2) root.sayNothingFound()
@@ -354,9 +354,9 @@ Item {
     if (q.length < 2 || root.hasAnswer || root.multiline(q)) return
     if (fileProc.running) return // onExited picks the newest query up
     fileProc.searched = q
-    // files.sh: plocate's index plus fd for what changed since it was built. The
-    // text goes in the environment: process arguments are readable by other users.
-    // timeout kills the whole process group (bash, fd, plocate) of a search that hangs.
+    // files.sh: fd over the home folder. The text goes in the environment:
+    // process arguments are readable by other users. timeout kills the whole
+    // process group (bash, fd, grep, awk) of a search that hangs.
     fileProc.environment = { OMALIGHT_QUERY: q }
     fileProc.command = ["timeout", "-k", "1", "4", "bash", root.filesScript]
     fileProc.running = true

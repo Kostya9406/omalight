@@ -19,7 +19,7 @@
 
 - Omarchy with the Quickshell-based `omarchy-shell` (Omarchy Quattro).
 - [Claude Code](https://claude.com/claude-code) installed and signed in: run `claude` once in a terminal and log in.
-- `plocate` and `fd` for file search; Omarchy ships both. The plocate index refreshes daily, and `fd` covers whatever changed since, so new files are found right away.
+- `fd` for file search; Omarchy ships it. Each search walks your home folder afresh (skipping hidden folders and `node_modules`), so new files are found right away. It stays on the home file system: disks mounted inside your home folder are not searched.
 
 ## Install
 
@@ -80,7 +80,7 @@ o.bind("ALT + SPACE", "OmaLight", "omarchy-shell shell toggle io.github.kostya94
 - The conversations themselves are stored by Claude Code, like any `claude` session, in `~/.claude/projects/-home-<you>--local-state-omalight/` (one `.jsonl` file per conversation, questions and answers included). Claude Code removes old ones itself after `cleanupPeriodDays` (30 days by default), or delete them as below. That is what lets a follow-up `--resume` the conversation.
 - Omarchy menu actions run exactly as the Omarchy menu runs them: they are commands from Omarchy and from your own menu extension.
 - Answers are untrusted text, so before rendering an invisible character (U+2060) goes between `!` and `[` and after every `<`, everywhere, code included: no image or HTML tag can form, and OmaLight adds no HTML of its own, so an answer cannot make the bar fetch anything without a click. Links open only on a click, and only `http(s)` ones (they keep Qt's default colour for that reason). Copying an answer gives the original text.
-- Typed text never goes through a shell. Other local users can read any process's arguments in `/proc`, so the text you search for and the questions you ask are handed over in the environment (readable only by you) and on stdin, not as arguments. The one exception is `plocate`, which only takes its pattern as an argument: while it runs, a fraction of a second per search, the search text is visible there. Mounting `/proc` with `hidepid=invisible` hides that too. File paths you open are passed as arguments.
+- Typed text never goes through a shell. Other local users can read any process's arguments in `/proc`, so the text you search for and the questions you ask are handed over in the environment (readable only by you) and on stdin, not as arguments: `fd` lists your home folder with no pattern, and the names are matched inside OmaLight's own pipeline. File paths you open are passed as arguments.
 
 ## Uninstall
 
@@ -96,10 +96,10 @@ Remove the `OmaLight` line from `~/.config/hypr/bindings.lua`.
 
 ## Development
 
-- `files.sh`: the file search (plocate, plus fd since the last index refresh); try it with `OMALIGHT_QUERY=<name> bash files.sh`.
+- `files.sh`: the file search (fd over your home folder); try it with `OMALIGHT_QUERY=<name> bash files.sh`.
 - `open.sh`: opens a result in its default app through `gio`, so apps that run in a terminal (nvim for text files) open in your terminal; with no app for the type it shows the file's folder.
 - `OmaLight.qml`: the overlay. `BarWidget.qml`: the bar mark. `Search.js`: matching, ranking, the calculator, the Omarchy menu and keybinding readers, and stream parsing. `Strings.js`: interface text. `Icon.js` and `YinYang.qml`: the mark.
-- `node tests/search.test.js` runs the logic tests; `bash tests/files.test.sh` checks `files.sh` against a stand-in plocate.
+- `node tests/search.test.js` runs the logic tests; `bash tests/files.test.sh` checks `files.sh` against a stand-in fd.
 - `node tools/make-icon.js [color] > icon.svg` redraws the icon from the same grid the overlay paints.
 - `omarchy-shell` caches compiled QML, so run `omarchy restart shell` after editing.
 
