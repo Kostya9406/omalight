@@ -17,6 +17,7 @@ var TEXT = {
   interrupted:  ["Interrupted", "Прервано"],
   stopped:      ["Stopped", "Остановлено"],
   empty:        ["Empty answer", "Пустой ответ"],
+  noStart:      ["Couldn't start claude", "Не удалось запустить claude"],
   exitCode:     ["claude exited with code ", "claude завершился с кодом "],
   errFailed:    ["Claude couldn't answer", "Claude не смог ответить"],
   errAuth:      ["Claude isn't signed in. Run claude in a terminal and log in.",

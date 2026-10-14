@@ -545,6 +545,7 @@ Item {
     askProc.environment = { OMALIGHT_QUESTION: run.question }
     askProc.command = run.command
     askProc.running = true
+    askStartCheck.restart()
   }
 
   function updateLastTurn(change) {
@@ -857,6 +858,19 @@ Item {
       Qt.callLater(function() {
         if (root.query.trim() !== fileProc.searched) root.startFileSearch()
       })
+    }
+  }
+
+  // A run that never started reports no exit at all; without this its turn
+  // would wait for an answer until Esc. A run that started and ended already
+  // went through onAskExited, so answering is false by then.
+  Timer {
+    id: askStartCheck
+    interval: 2000
+    onTriggered: {
+      if (askProc.running || askProc.pending || !root.answering) return
+      root.finishTurn("")
+      root.updateLastTurn(function(t) { if (!t.error) t.error = root.tr("noStart") })
     }
   }
 
