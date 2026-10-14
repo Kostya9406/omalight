@@ -524,7 +524,7 @@ Item {
       // arguments), and goes on to claude on stdin, never through a shell; exec so
       // stopping the run stops claude.
       // Omarchy's own agent guide joins the system prompt, so answers fit this system.
-      'q=$OMALIGHT_QUESTION; unset OMALIGHT_QUESTION; d=$1; p=$2; k=$3; shift 3; mkdir -p "$d" && cd "$d" || exit 1; ' +
+      'q=$OMALIGHT_QUESTION; unset OMALIGHT_QUESTION; d=$1; p=$2; k=$3; shift 3; mkdir -p -m 700 "$d" && cd "$d" || exit 1; ' +
       'for f in SKILL.md hyprland.md theming.md plugins.md; do [ -f "$k/$f" ] && p+=$\'\\n\\n\'"$(cat "$k/$f")"; done; ' +
       'exec claude "$@" --append-system-prompt "$p" <<<"$q"',
       "bash", root.stateDir, root.systemPrompt, root.skillDir].concat(args) }
@@ -687,11 +687,19 @@ Item {
 
   // Creates the state folder and the picker stand-in: it drains the list it is
   // given and answers with the line OmaLight already chose.
+  // The folder is private (0700) and so are its files (0600): what you launch
+  // and when is nobody else's business. The files are created here, as Qt would
+  // create them with the umask's 0644 and then keeps whatever mode they have.
+  // chmod also closes an install made before they were private.
   Process {
     id: setupProc
     command: ["bash", "-c",
-      'mkdir -p "$1" && printf "%s\\n" "#!/bin/sh" "cat >/dev/null" "printf \'%s\\\\n\' \\"\\$OMALIGHT_PICK\\"" > "$1/omarchy-menu-select" && chmod 755 "$1/omarchy-menu-select"',
-      "bash", root.pickerDir]
+      'mkdir -p "$1/picker" || exit 1; umask 077; chmod 700 "$1" "$1/picker"; ' +
+      // set -C: a save Qt finished meanwhile is never cut back to {}.
+      'for f in settings.json usage.json; do [ -e "$1/$f" ] || (set -C; printf "{}\\n" > "$1/$f") 2>/dev/null; done; ' +
+      'chmod -f 600 "$1/settings.json" "$1/usage.json"; ' +
+      'printf "%s\\n" "#!/bin/sh" "cat >/dev/null" "printf \'%s\\\\n\' \\"\\$OMALIGHT_PICK\\"" > "$1/picker/omarchy-menu-select" && chmod 700 "$1/picker/omarchy-menu-select"',
+      "bash", root.stateDir]
     onExited: {
       settingsFile.reload()
       usageFile.reload()
