@@ -505,6 +505,9 @@ Item {
     root.pendingEnter = ""
     // A new question while one is still answering ends that one where it is.
     if (root.answering) root.finishTurn(root.tr("interrupted"))
+    // A question still waiting for the stopped run to exit is replaced before it
+    // ever started; its turn says so instead of staying empty for good.
+    else if (askProc.pending) root.updateLastTurn(function(t) { if (!t.a && !t.error) t.error = root.tr("interrupted") })
     var turns = root.turns.slice()
     turns.push({ q: q, a: "", error: "" })
     root.turns = turns
