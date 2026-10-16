@@ -2,9 +2,9 @@
 
 <h1 align="center">OmaLight</h1>
 
-<p align="center">A Spotlight-style bar for <a href="https://omarchy.org">Omarchy</a>: find apps and files, or ask Claude and read the answer streamed right in the bar.</p>
+<p align="center"><b>Ask Claude right in your launcher.</b> A Spotlight-style bar for <a href="https://omarchy.org">Omarchy</a>: the answer streams in place, Claude knows Omarchy, no API key, and nothing goes to Claude unless you ask. The same input finds apps, windows, Omarchy actions, keybindings and files.</p>
 
-![OmaLight answering a question](preview.png)
+![OmaLight: a file search, then a question to Claude answered in place](docs/demo.gif)
 
 - **One input for everything.** Apps, open windows, every action in the Omarchy menu, your keybindings, files and folders in your home, sums, and an "Ask Claude" row on top. Results of every kind are ranked together by how well they match.
 - **Speaks Omarchy.** Apps Omarchy hides stay hidden, actions show where they live (*Omarchy › Style › Theme*), keybindings run through Omarchy's own dispatcher, and launching an app shows the same "Launching…" notice as the Omarchy menu. Apps you launch often rise to the top.
