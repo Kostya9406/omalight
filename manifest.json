@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.kostya9406.omalight",
   "name": "OmaLight",
-  "version": "1.1.9",
+  "version": "1.1.10",
   "author": "Kostya9406",
   "license": "MIT",
   "description": "Ask Claude right in your launcher: the answer streams in place, and Claude gets Omarchy's own guide, so it names the right commands, files and keys. Uses your Claude Code subscription, no API key, and nothing goes to Claude unless you ask. The same input finds apps, open windows, Omarchy menu actions, keybindings, files and sums, ranked together. Follows your theme; a yin-yang on the bar opens it and shows your Claude limits.",

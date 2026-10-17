@@ -116,8 +116,12 @@ Item {
     root.setQuery("")
     root.opened = true
     root.refreshSources()
-    Qt.callLater(function() { input.forceActiveFocus() })
+    Qt.callLater(root.focusInput)
   }
+
+  // The input exists only while the bar is open (see inputLoader).
+  readonly property TextInput input: inputLoader.item as TextInput
+  function focusInput() { if (root.input) root.input.forceActiveFocus() }
 
   function close() {
     root.opened = false
@@ -176,7 +180,7 @@ Item {
 
   function setQuery(text) {
     root.query = text
-    if (input.text !== text) input.text = text
+    if (root.input && root.input.text !== text) root.input.text = text
     if (root.hasAnswer) return
     root.userMoved = false
     root.pendingEnter = ""
@@ -514,7 +518,7 @@ Item {
     root.notice = ""
     root.followAnswer = true
     root.query = ""
-    input.text = ""
+    if (root.input) root.input.text = ""
     var args = ["--safe-mode", "-p", "--model", root.model,
                 "--output-format", "stream-json", "--verbose", "--include-partial-messages",
                 "--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch,WebFetch"]
@@ -663,7 +667,7 @@ Item {
     if (root.hasAnswer) {
       if (enter) { root.ask(root.query); return true }
       // Ctrl+Insert too: Omarchy's Super+C sends it instead of Ctrl+C when a terminal is the active window.
-      if (ctrl && (event.key === Qt.Key_C || event.key === Qt.Key_Insert) && !input.selectedText) { root.copyAnswer(); return true }
+      if (ctrl && (event.key === Qt.Key_C || event.key === Qt.Key_Insert) && !(root.input && root.input.selectedText)) { root.copyAnswer(); return true }
       if (ctrl && event.key === Qt.Key_N) { root.resetConversation(); root.setQuery(""); return true }
       if (event.key === Qt.Key_PageUp) { answerView.flick(0, Style.space(1600)); return true }
       if (event.key === Qt.Key_PageDown) { answerView.flick(0, -Style.space(1600)); return true }
@@ -944,7 +948,7 @@ Item {
       borderSpec: root.borderSpec
       padding: root.contentMargin
 
-      MouseArea { anchors.fill: parent; onClicked: input.forceActiveFocus() }
+      MouseArea { anchors.fill: parent; onClicked: root.focusInput() }
 
       Column {
         id: content
@@ -979,34 +983,45 @@ Item {
             }
           }
 
-          TextInput {
-            id: input
+          // Created only while the bar is open. Released Qt (6.11, 6.12.0)
+          // reads the clipboard's text into every editable TextInput on each
+          // clipboard change, and this overlay stays loaded all the time, so
+          // a hidden bar must hold no TextInput at all.
+          Loader {
+            id: inputLoader
+            active: root.opened
+            focus: true
             anchors.left: mark.right
             anchors.leftMargin: Style.spacing.xl
             anchors.right: modelLabel.left
             anchors.rightMargin: Style.spacing.lg
             anchors.verticalCenter: parent.verticalCenter
-            color: root.foreground
-            selectionColor: root.selectedBackground
-            selectedTextColor: root.foreground
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.heading + Style.space(4)
-            clip: true
-            focus: true
-            onTextEdited: root.setQuery(text)
 
-            Keys.priority: Keys.BeforeItem
-            Keys.onPressed: function(event) { event.accepted = root.handleKey(event) }
-
-            Text {
-              anchors.fill: parent
-              verticalAlignment: Text.AlignVCenter
-              visible: !input.text
-              text: root.hasAnswer ? root.tr(root.answering ? "answering" : "followUp") : root.tr("placeholder")
+            sourceComponent: TextInput {
+              id: input
+              Component.onCompleted: text = root.query
               color: root.foreground
-              opacity: 0.45
-              font: input.font
-              elide: Text.ElideRight
+              selectionColor: root.selectedBackground
+              selectedTextColor: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.heading + Style.space(4)
+              clip: true
+              focus: true
+              onTextEdited: root.setQuery(text)
+
+              Keys.priority: Keys.BeforeItem
+              Keys.onPressed: function(event) { event.accepted = root.handleKey(event) }
+
+              Text {
+                anchors.fill: parent
+                verticalAlignment: Text.AlignVCenter
+                visible: !input.text
+                text: root.hasAnswer ? root.tr(root.answering ? "answering" : "followUp") : root.tr("placeholder")
+                color: root.foreground
+                opacity: 0.45
+                font: input.font
+                elide: Text.ElideRight
+              }
             }
           }
 
@@ -1028,7 +1043,7 @@ Item {
               anchors.margins: -Style.spacing.md
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              onClicked: { root.cycleModel(); input.forceActiveFocus() }
+              onClicked: { root.cycleModel(); root.focusInput() }
             }
           }
         }
