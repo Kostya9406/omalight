@@ -524,6 +524,22 @@ function searchWindows(clients, query, limit) {
   }, limit || 3, function(a, b) { return (a.focusHistoryID || 0) - (b.focusHistoryID || 0) })
 }
 
+// A window's class is set by the client, so it is only used as an icon name when
+// it is a plain theme name. QIcon::fromTheme loads an absolute path as a file,
+// which would let any window make the shell decode an image of its choosing.
+// Case is kept: theme lookup is case-sensitive (org.gnome.Nautilus.svg).
+function windowIconName(cls) {
+  var name = String(cls || "")
+  return /^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(name) ? name : ""
+}
+
+// Icon= of a desktop entry: an absolute path is a file, as the spec allows;
+// anything else must be a bare theme name, so "a/../b" cannot steer the lookup.
+function entryIconName(icon) {
+  var name = String(icon || "")
+  return name.charAt(0) === "/" || name.indexOf("/") < 0 ? name : ""
+}
+
 // MARK: calculator
 
 // "2*(3+4)", "2^10", "1,5 + 2", "-2^2". No eval: a small recursive-descent
@@ -615,5 +631,5 @@ if (typeof module !== "undefined") module.exports = {
   textScore: textScore, rowScore: rowScore, parseHiddenIds: parseHiddenIds, frecency: frecency, recordUse: recordUse,
   stripJsonc: stripJsonc, parseMenu: parseMenu, menuPath: menuPath, menuGuardScript: menuGuardScript,
   parseGuardOutput: parseGuardOutput, searchMenu: searchMenu, parseKeybindings: parseKeybindings,
-  searchBindings: searchBindings, searchWindows: searchWindows, calculate: calculate, claudeUsage: claudeUsage
+  searchBindings: searchBindings, searchWindows: searchWindows, windowIconName: windowIconName, entryIconName: entryIconName, calculate: calculate, claudeUsage: claudeUsage
 }

@@ -222,15 +222,19 @@ Item {
     for (var i = 0; i < apps.length; i++) {
       var e = apps[i]
       add({ kind: "app", title: String(e.name || e.id), subtitle: String(e.genericName || e.comment || root.tr("app")),
-            icon: String(e.icon || ""), id: String(e.id || "") }, Search.appScore(e, q), 0)
+            icon: Search.entryIconName(e.icon), id: String(e.id || "") }, Search.appScore(e, q), 0)
     }
 
     var wins = Search.searchWindows(root.clients, q, 3)
     for (var w = 0; w < wins.length; w++) {
       var c = wins[w]
       var ws = c.workspace && c.workspace.name ? " · " + root.tr("workspace") + c.workspace.name : ""
+      // The icon comes from the app's own desktop entry when there is one; the
+      // class itself is client-controlled, so it is only a validated fallback.
+      var entry = c["class"] ? DesktopEntries.heuristicLookup(String(c["class"])) : null
       add({ kind: "window", title: String(c.title || c["class"]), subtitle: root.tr("window") + " · " + String(c["class"] || "") + ws,
-            address: String(c.address), icon: String(c["class"] || "").toLowerCase() },
+            address: String(c.address),
+            icon: entry && entry.icon ? Search.entryIconName(entry.icon) : Search.windowIconName(c["class"]) },
           Math.min(Search.rowScore(c["class"], "", q), Search.rowScore(c.title, "", q)), 1)
     }
 
@@ -1088,11 +1092,12 @@ Item {
                 // Themed icons (image://icon/...) go through Qt's icon loader, which is
                 // not thread-safe: loaded on the pixmap reader thread, it races the GUI
                 // thread and once took the whole shell down. Only plain files load off-thread.
-                asynchronous: rowItem.kind === "app" && rowItem.modelData.icon.charAt(0) === "/"
-                source: rowItem.kind === "app"
-                  ? (rowItem.modelData.icon.charAt(0) === "/" ? Util.fileUrl(rowItem.modelData.icon)
-                     : Quickshell.iconPath(rowItem.modelData.icon || "application-x-executable", "application-x-executable"))
-                  : rowItem.kind === "window" ? Quickshell.iconPath(rowItem.modelData.icon, true) : ""
+                readonly property string icon: rowItem.kind === "app" || rowItem.kind === "window" ? String(rowItem.modelData.icon || "") : ""
+                asynchronous: icon.charAt(0) === "/"
+                source: rowItem.kind !== "app" && rowItem.kind !== "window" ? ""
+                  : icon.charAt(0) === "/" ? Util.fileUrl(icon)
+                  : rowItem.kind === "app" ? Quickshell.iconPath(icon || "application-x-executable", "application-x-executable")
+                  : icon ? Quickshell.iconPath(icon, true) : ""
               }
 
               YinYang {
