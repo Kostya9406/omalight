@@ -1085,7 +1085,10 @@ Item {
                 height: width
                 sourceSize.width: width * 2
                 sourceSize.height: height * 2
-                asynchronous: true
+                // Themed icons (image://icon/...) go through Qt's icon loader, which is
+                // not thread-safe: loaded on the pixmap reader thread, it races the GUI
+                // thread and once took the whole shell down. Only plain files load off-thread.
+                asynchronous: rowItem.kind === "app" && rowItem.modelData.icon.charAt(0) === "/"
                 source: rowItem.kind === "app"
                   ? (rowItem.modelData.icon.charAt(0) === "/" ? Util.fileUrl(rowItem.modelData.icon)
                      : Quickshell.iconPath(rowItem.modelData.icon || "application-x-executable", "application-x-executable"))
