@@ -1,0 +1,14 @@
+name: tests
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Node из образа раннера: тестам нужны только assert и fs, setup-node не нужен.
+      - run: node --version && node tests/search.test.js
+      - run: bash tests/files.test.sh
